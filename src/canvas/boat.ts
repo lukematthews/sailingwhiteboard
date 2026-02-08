@@ -1,7 +1,7 @@
 import type { Boat } from "../types";
 
 export const BOAT_PATH =
-  "M -9,30 H 9 C 13.868315,7.9907994 20.032202,-19.390455 0,-60 C -20.032202,-19.390455 -13.868315,7.9907994 -9,30 Z";
+  "m -9,50 h 18 c 5,-22 11,-50 -9,-90 -20,40 -14,68 -9,90 z";
 
 export function drawBoat(ctx: CanvasRenderingContext2D, boat: Boat) {
   const { x, y, headingDeg, color, label } = boat;

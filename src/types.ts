@@ -51,7 +51,7 @@ export type StartLine = {
 // - International Code of Signals (A–Z)
 // - Numeral pennants (0–9)
 // - Substitutes (S1–S3)
-// - A few race-control flags (AP, Black, etc.)
+// - Race-control flags (AP, Black, etc.)
 
 export type FlagCode =
   | "AP"

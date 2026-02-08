@@ -1,5 +1,4 @@
-// src/SailingAnimationBuilder.tsx
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { clamp } from "./lib/math";
 import { uid } from "./lib/ids";
 import { formatTime, snapTime } from "./lib/time";
@@ -25,6 +24,7 @@ import type {
   ToolMode,
   Wind,
 } from "./types";
+import { DEFAULT_MARKS, DEFAULT_START_LINE } from "./canvas/defaults";
 
 const DEFAULT_DURATION_MS = 12000;
 const DEFAULT_FPS = 60;
@@ -39,7 +39,6 @@ type ProjectFile = {
   wind: Wind;
   startLine: StartLine;
   flags: Flag[];
-  // Option A: clips per flag
   flagClipsByFlagId: FlagClipsByFlagId;
 };
 
@@ -74,17 +73,11 @@ export default function SailingAnimationBuilder() {
 
   const [keyframesByBoatId, setKeyframesByBoatId] = useState<KeyframesByBoatId>(() => ({}));
 
-  const [marks, setMarks] = useState<Mark[]>(() => [
-    { id: uid(), name: "M1", type: "round", x: 600, y: 120 },
-  ]);
+  const [marks, setMarks] = useState<Mark[]>(() => DEFAULT_MARKS);
 
-  const [wind, setWind] = useState<Wind>(() => ({ fromDeg: 210, speedKt: 18 }));
+  const [wind, setWind] = useState<Wind>(() => ({ fromDeg: 0, speedKt: 15 }));
 
-  const [startLine, setStartLine] = useState<StartLine>(() => ({
-    committee: { x: 380, y: 120 },
-    pin: { x: 660, y: 150 },
-    startBoatId: null,
-  }));
+  const [startLine, setStartLine] = useState<StartLine>(() => (DEFAULT_START_LINE));
 
   // Flags (Option A)
   const [flags, setFlags] = useState<Flag[]>([]);
@@ -306,7 +299,7 @@ export default function SailingAnimationBuilder() {
         return;
       }
 
-      // flags — Option A: only selectable if a code resolves at current time
+      // flags
       const flagsNow = flagsRef.current;
       for (let i = flagsNow.length - 1; i >= 0; i--) {
         const f = flagsNow[i];
@@ -616,8 +609,8 @@ export default function SailingAnimationBuilder() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">Sailing Animation Builder</h1>
-            <p className="text-sm text-slate-600">Flags are overlays with per-flag code clips (Option A).</p>
+            <h1 className="text-xl font-semibold text-slate-900">Sailing Whiteboard</h1>
+            <p className="text-sm text-slate-600">Animate your sailing - Show people what happened out there.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -663,7 +656,7 @@ export default function SailingAnimationBuilder() {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
           <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-            <div ref={wrapRef} className="relative aspect-[16/10] w-full overflow-hidden rounded-xl ring-1 ring-slate-200">
+            <div ref={wrapRef} className="relative aspect-16/10 w-full overflow-hidden rounded-xl ring-1 ring-slate-200">
               <canvas ref={canvasRef} className="h-full w-full touch-none" />
             </div>
 
@@ -871,16 +864,6 @@ export default function SailingAnimationBuilder() {
                     onChange={(e) => setExportText(e.target.value)}
                     placeholder="Click Export to generate JSON, or paste JSON here then click Import."
                   />
-                </div>
-
-                <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-                  <div className="text-xs font-medium text-slate-700">Roadmap</div>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                    <li>Flag clips editable directly in the dope sheet lanes</li>
-                    <li>Laylines (port/starboard) from selected boat using wind angle</li>
-                    <li>Start sequence timer (5/4/1) synced to timeMs</li>
-                    <li>Magnetic snapping: start line / marks / grid</li>
-                  </ul>
                 </div>
               </div>
             </div>
