@@ -123,14 +123,14 @@ export default function CoursePanel({ marks, setMarks, wind, setWind, startLine,
           </div>
         </div>
 
-        <div className="rounded-lg bg-white p-2 text-xs text-slate-600 ring-1 ring-slate-200">
+        {/* <div className="rounded-lg bg-white p-2 text-xs text-slate-600 ring-1 ring-slate-200">
           <div className="font-medium text-slate-700">Canvas interactions</div>
           <ul className="mt-1 list-disc space-y-1 pl-5">
             <li>Drag marks to position them.</li>
             <li>Drag start-line handles (square/circle) to set the line.</li>
             <li>Wind arrow is display-only for now.</li>
           </ul>
-        </div>
+        </div> */}
       </div>
     </div>
   );
