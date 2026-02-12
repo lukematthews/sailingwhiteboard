@@ -164,3 +164,28 @@ export type FlagCodeClip = {
 };
 
 export type FlagClipsByFlagId = Record<string, FlagCodeClip[]>;
+
+export type Step = {
+  id: string;
+  tMs: number;
+
+  x: number;
+  y: number;
+
+  headingMode: "auto" | "manual";
+  headingDeg?: number; // only if manual
+
+  label?: string;
+};
+
+export type StepsByBoatId = Record<string, Step[]>;
+
+export type Segment = {
+  fromStepId: string;
+  toStepId: string;
+
+  controlMode: "auto" | "manual";
+  controlPoint?: { x: number; y: number }; // single-point MVP
+};
+
+export type SegmentsByBoatId = Record<string, Segment[]>;

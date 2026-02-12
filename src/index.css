@@ -1,1 +1,12 @@
 @import "tailwindcss";
+
+/* Lane sliders: only allow dragging handles */
+.steps-lane-slider .ant-slider-rail,
+.steps-lane-slider .ant-slider-track {
+  pointer-events: none;
+}
+
+/* Handles must still work */
+.steps-lane-slider .ant-slider-handle {
+  pointer-events: auto;
+}

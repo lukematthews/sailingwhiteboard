@@ -1,3 +1,4 @@
+// src/SailingAnimationBuilder.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { clamp } from "./lib/math";
 import { uid } from "./lib/ids";
@@ -9,9 +10,10 @@ import { drawMark, hitTestMark } from "./canvas/marks";
 import { drawWind } from "./canvas/wind";
 import { drawStartLine, hitTestStartHandle } from "./canvas/startLine";
 import { drawFlag, hitTestFlag, resolveActiveFlagCode } from "./canvas/flags";
-import { interpolateBoatsAtTime } from "./animation/interpolate";
+import { sampleStepsPath } from "./animation/stepsPath";
 import { upsertKeyframe } from "./animation/keyframes";
-import TimelineDopeSheet from "./components/TimelineDopeSheet";
+import { upsertStep } from "./animation/steps";
+import StepsDopeSheet from "./components/StepsDopeSheet";
 import CoursePanel from "./components/CoursePanel";
 import FlagsPanel from "./components/FlagsPanel";
 import type {
@@ -20,11 +22,15 @@ import type {
   FlagClipsByFlagId,
   KeyframesByBoatId,
   Mark,
+  SegmentsByBoatId,
   StartLine,
+  Step,
+  StepsByBoatId,
   ToolMode,
   Wind,
 } from "./types";
 import { DEFAULT_MARKS, DEFAULT_START_LINE } from "./canvas/defaults";
+import { interpolateBoatsAtTimeFromSteps } from "./animation/stepsInterpolate";
 
 const DEFAULT_DURATION_MS = 12000;
 const DEFAULT_FPS = 60;
@@ -42,28 +48,114 @@ type ProjectFile = {
   flagClipsByFlagId: FlagClipsByFlagId;
 };
 
+function ensureStartKeyframes(boats: Boat[], prev: KeyframesByBoatId): KeyframesByBoatId {
+  let next = prev;
+  for (const b of boats) {
+    const list = next[b.id] || [];
+    const hasZero = list.some((k) => k.tMs === 0);
+    if (!hasZero) {
+      next = upsertKeyframe(next, b.id, 0, { x: b.x, y: b.y, headingDeg: b.headingDeg });
+    }
+  }
+  return next;
+}
+
+function ensureStartSteps(boats: Boat[], prev: StepsByBoatId): StepsByBoatId {
+  let next: StepsByBoatId = prev;
+  for (const b of boats) {
+    const list = next[b.id] ?? [];
+    const hasZero = list.some((s) => s.tMs === 0);
+    if (!hasZero) {
+      const newStep: Step = { id: uid(), tMs: 0, x: b.x, y: b.y, headingMode: "auto" };
+      next = { ...next, [b.id]: [...list, newStep].sort((a, c) => a.tMs - c.tMs) };
+    }
+  }
+  return next;
+}
+
+function sortSteps(list: Step[]) {
+  return list.slice().sort((a, b) => a.tMs - b.tMs);
+}
+
+function frameStepMs(fps: number) {
+  return Math.max(1, Math.round(1000 / fps));
+}
+
+function findClosestStepIndex(steps: Step[], tMs: number) {
+  if (steps.length === 0) return -1;
+  let bestI = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < steps.length; i++) {
+    const d = Math.abs(steps[i].tMs - tMs);
+    if (d < bestD) {
+      bestD = d;
+      bestI = i;
+    }
+  }
+  return bestI;
+}
+
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  const rr = Math.max(0, Math.min(r, Math.min(w, h) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.lineTo(x + w - rr, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+  ctx.lineTo(x + w, y + h - rr);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+  ctx.lineTo(x + rr, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+  ctx.lineTo(x, y + rr);
+  ctx.quadraticCurveTo(x, y, x + rr, y);
+  ctx.closePath();
+}
+
+function drawStepBadge(ctx: CanvasRenderingContext2D, x: number, y: number, text: string) {
+  ctx.save();
+  ctx.font = "11px ui-sans-serif, system-ui";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const padX = 6;
+  const h = 16;
+  const w = Math.max(16, ctx.measureText(text).width + padX * 2);
+
+  roundRectPath(ctx, x - w / 2, y - h / 2, w, h, 7);
+  ctx.fillStyle = "rgba(15, 23, 42, 0.65)";
+  ctx.fill();
+
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.fillText(text, x, y + 0.5);
+  ctx.restore();
+}
+
 export default function SailingAnimationBuilder() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
+  // core timeline state
   const [durationMs, setDurationMs] = useState<number>(DEFAULT_DURATION_MS);
   const [fps, setFps] = useState<number>(DEFAULT_FPS);
   const [timeMs, setTimeMs] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
 
-  const [autoKey, setAutoKey] = useState<boolean>(true);
+  // (kept) other state
+  const [autoKey] = useState<boolean>(true);
+  const [segmentsByBoatId] = useState<SegmentsByBoatId>(() => ({}));
 
-  // If your flags.ts dispatches "flagassetloaded" in img.onload, this will refresh the canvas.
-  // We also include a RAF fallback tick so flags appear even if that event is missing.
+  // redraw tick for async-loaded flag SVG assets
   const [assetTick, setAssetTick] = useState<number>(0);
-
   useEffect(() => {
-    const onAsset = () => setAssetTick((t) => t + 1);
-    window.addEventListener("flagassetloaded", onAsset);
-
-    return () => {
-      window.removeEventListener("flagassetloaded", onAsset);
-    };
+    const h = () => setAssetTick((t) => t + 1);
+    window.addEventListener("flagassetloaded", h);
+    return () => window.removeEventListener("flagassetloaded", h);
   }, []);
 
   const [boats, setBoats] = useState<Boat[]>(() => [
@@ -71,39 +163,32 @@ export default function SailingAnimationBuilder() {
     { id: uid(), label: "Yellow", color: "#f59e0b", x: 500, y: 235, headingDeg: 20 },
   ]);
 
+  // keyframes (legacy)
   const [keyframesByBoatId, setKeyframesByBoatId] = useState<KeyframesByBoatId>(() => ({}));
 
+  // steps (current)
+  const [stepsByBoatId, setStepsByBoatId] = useState<StepsByBoatId>(() => ({}));
+
+  // ensure defaults at t=0
+  useEffect(() => {
+    setKeyframesByBoatId((prev) => ensureStartKeyframes(boats, prev));
+  }, [boats]);
+
+  useEffect(() => {
+    setStepsByBoatId((prev) => ensureStartSteps(boats, prev));
+  }, [boats]);
+
+  // course
   const [marks, setMarks] = useState<Mark[]>(() => DEFAULT_MARKS);
-
   const [wind, setWind] = useState<Wind>(() => ({ fromDeg: 0, speedKt: 15 }));
+  const [startLine, setStartLine] = useState<StartLine>(() => DEFAULT_START_LINE);
 
-  const [startLine, setStartLine] = useState<StartLine>(() => (DEFAULT_START_LINE));
-
-  // Flags (Option A)
+  // flags
   const [flags, setFlags] = useState<Flag[]>([]);
   const [flagClipsByFlagId, setFlagClipsByFlagId] = useState<FlagClipsByFlagId>(() => ({}));
   const [selectedFlagId, setSelectedFlagId] = useState<string | null>(null);
 
-  useEffect(() => {
-  // redraw burst any time flags/clips change (covers async decode even if no event fires)
-    let raf = 0;
-    let frames = 0;
-
-    const pump = () => {
-      frames++;
-      setAssetTick((t) => t + 1);
-      if (frames < 12) raf = requestAnimationFrame(pump);
-    };
-
-    raf = requestAnimationFrame(pump);
-    return () => cancelAnimationFrame(raf);
-  }, [flags.length, flagClipsByFlagId]);
-
-
-  // If you want flags to show immediately even with clips-only visibility:
-  // Option A already makes "no clips => show flag.code", so no seed required.
-  // Leaving this effect OUT avoids confusion. If you want a seed clip, do it when adding a flag.
-
+  // selection + tool
   const [selectedBoatId, setSelectedBoatId] = useState<string | null>(null);
   const [tool, setTool] = useState<ToolMode>("select");
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
@@ -135,6 +220,14 @@ export default function SailingAnimationBuilder() {
     () => boats.find((b) => b.id === selectedBoatId) || null,
     [boats, selectedBoatId],
   );
+
+  const displayedBoats = useMemo(
+    () => interpolateBoatsAtTimeFromSteps(boats, stepsByBoatId, segmentsByBoatId, timeMs),
+    [boats, stepsByBoatId, segmentsByBoatId, timeMs],
+  );
+
+  const displayedBoatsRef = useRef<Boat[]>(displayedBoats);
+  useEffect(() => void (displayedBoatsRef.current = displayedBoats), [displayedBoats]);
 
   // animation loop
   useEffect(() => {
@@ -191,25 +284,71 @@ export default function SailingAnimationBuilder() {
     drawStartLine(ctx, startLine);
     for (const m of marks) drawMark(ctx, m);
 
-    const displayed = interpolateBoatsAtTime(boats, keyframesByBoatId, timeMs);
-
-    // tracks
+    // tracks (under ghosts + boats)
     ctx.save();
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 6]);
     for (const b of boats) {
-      const kfs = keyframesByBoatId[b.id] || [];
-      if (kfs.length < 2) continue;
+      const steps = stepsByBoatId[b.id] || [];
+      if (steps.length < 2) continue;
+
+      const pts = sampleStepsPath(steps, segmentsByBoatId[b.id] || [], 24);
+      if (pts.length < 2) continue;
+
       ctx.beginPath();
-      kfs.forEach((k, i) =>
-        i === 0 ? ctx.moveTo(k.state.x, k.state.y) : ctx.lineTo(k.state.x, k.state.y),
-      );
+      pts.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
       ctx.strokeStyle = "rgba(0,0,0,0.18)";
       ctx.stroke();
     }
     ctx.restore();
 
-    // boats
+    // --- ghost boats at each step time + step labels ---
+    const snappedNow = snapTime(timeMs, fps);
+    const frame = frameStepMs(fps);
+
+    for (const b of boats) {
+      const laneSteps = sortSteps(stepsByBoatId[b.id] || []);
+      if (laneSteps.length === 0) continue;
+
+      const closestI = findClosestStepIndex(laneSteps, snappedNow);
+
+      for (let i = 0; i < laneSteps.length; i++) {
+        const s = laneSteps[i];
+
+        const poseAtStep = interpolateBoatsAtTimeFromSteps(
+          boats,
+          stepsByBoatId,
+          segmentsByBoatId,
+          s.tMs,
+        ).find((x) => x.id === b.id);
+
+        if (!poseAtStep) continue;
+
+        const isClosest =
+          i === closestI && Math.abs((laneSteps[closestI]?.tMs ?? 0) - snappedNow) <= frame;
+
+        ctx.save();
+
+        // boat ghost alpha
+        ctx.globalAlpha = isClosest ? 0.45 : 0.18;
+
+        // IMPORTANT: keep label empty so ghosts don't clutter (drawBoat may render label)
+        drawBoat(ctx, {
+          ...poseAtStep,
+          label: "",
+          color: isClosest ? b.color : "#94a3b8",
+        });
+
+        // step badge slightly clearer than boat
+        ctx.globalAlpha = isClosest ? 0.75 : 0.45;
+        drawStepBadge(ctx, poseAtStep.x, poseAtStep.y - 44, String(i + 1));
+
+        ctx.restore();
+      }
+    }
+
+    // current boats (at playhead)
+    const displayed = displayedBoats;
     for (const b of displayed) {
       drawBoat(ctx, b);
 
@@ -224,6 +363,7 @@ export default function SailingAnimationBuilder() {
         ctx.restore();
       }
 
+      // start boat marker
       if (startLine.startBoatId && b.id === startLine.startBoatId) {
         ctx.save();
         ctx.beginPath();
@@ -235,7 +375,7 @@ export default function SailingAnimationBuilder() {
       }
     }
 
-    // flags (overlay) — Option A: resolve code by time per-flag lane
+    // flags overlay
     for (const f of flags) {
       const code = resolveActiveFlagCode(f, flagClipsByFlagId[f.id], timeMs);
       if (!code) continue;
@@ -251,9 +391,11 @@ export default function SailingAnimationBuilder() {
     ctx.restore();
   }, [
     boats,
-    keyframesByBoatId,
+    stepsByBoatId,
+    segmentsByBoatId,
     timeMs,
     durationMs,
+    fps,
     selectedBoatId,
     marks,
     wind,
@@ -299,7 +441,7 @@ export default function SailingAnimationBuilder() {
         return;
       }
 
-      // flags
+      // flags (selectable only if visible now)
       const flagsNow = flagsRef.current;
       for (let i = flagsNow.length - 1; i >= 0; i--) {
         const f = flagsNow[i];
@@ -335,7 +477,7 @@ export default function SailingAnimationBuilder() {
       }
 
       // boats
-      const boatsNow = boatsRef.current;
+      const boatsNow = displayedBoatsRef.current;
       let hit: Boat | null = null;
       for (let i = boatsNow.length - 1; i >= 0; i--) {
         const b = boatsNow[i];
@@ -359,7 +501,12 @@ export default function SailingAnimationBuilder() {
       if (toolNow === "rotate") {
         active = { kind: "boat", boatId: hit.id, mode: "rotate", dragOffset: { x: 0, y: 0 } };
       } else {
-        active = { kind: "boat", boatId: hit.id, mode: "drag", dragOffset: { x: p.x - hit.x, y: p.y - hit.y } };
+        active = {
+          kind: "boat",
+          boatId: hit.id,
+          mode: "drag",
+          dragOffset: { x: p.x - hit.x, y: p.y - hit.y },
+        };
       }
 
       try {
@@ -408,8 +555,10 @@ export default function SailingAnimationBuilder() {
         setMarks((prev) =>
           prev.map((m) => {
             if (m.id !== markId) return m;
+
             let nx = p.x - offset.x;
             let ny = p.y - offset.y;
+
             if (snapNow) {
               const s = 5;
               nx = Math.round(nx / s) * s;
@@ -430,46 +579,48 @@ export default function SailingAnimationBuilder() {
         const snapNow = snapRef.current;
 
         if (mode === "drag") {
-          setBoats((prev) =>
-            prev.map((b) => {
-              if (b.id !== boatId) return b;
-              let nx = p.x - offset.x;
-              let ny = p.y - offset.y;
-              if (snapNow) {
-                const s = 5;
-                nx = Math.round(nx / s) * s;
-                ny = Math.round(ny / s) * s;
-              }
-              return { ...b, x: nx, y: ny };
-            }),
-          );
+          const nowT = snapTime(timeRef.current, fpsRef.current);
+
+          const bNow = displayedBoatsRef.current.find((x) => x.id === boatId);
+          if (!bNow) return;
+
+          let nx = p.x - offset.x;
+          let ny = p.y - offset.y;
+
+          if (snapNow) {
+            const s = 5;
+            nx = Math.round(nx / s) * s;
+            ny = Math.round(ny / s) * s;
+          }
+
+          setStepsByBoatId((prev) => upsertStep(prev, boatId, nowT, { x: nx, y: ny }));
+          e.preventDefault();
+          return;
         }
 
         if (mode === "rotate") {
-          setBoats((prev) =>
-            prev.map((b) => {
-              if (b.id !== boatId) return b;
-              const dx = p.x - b.x;
-              const dy = p.y - b.y;
-              const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
-              const heading = (ang + 90 + 360) % 360;
-              return { ...b, headingDeg: heading };
+          const nowT = snapTime(timeRef.current, fpsRef.current);
+
+          const bNow = displayedBoatsRef.current.find((x) => x.id === boatId);
+          if (!bNow) return;
+
+          const dx = p.x - bNow.x;
+          const dy = p.y - bNow.y;
+          const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+          const heading = (ang + 90 + 360) % 360;
+
+          setStepsByBoatId((prev) =>
+            upsertStep(prev, boatId, nowT, {
+              x: bNow.x,
+              y: bNow.y,
+              headingMode: "manual",
+              headingDeg: heading,
             }),
           );
-        }
 
-        if (autoKey) {
-          const nowT = snapTime(timeRef.current, fpsRef.current);
-          const b = boatsRef.current.find((x) => x.id === boatId);
-          if (b) {
-            setKeyframesByBoatId((prev) =>
-              upsertKeyframe(prev, boatId, nowT, { x: b.x, y: b.y, headingDeg: b.headingDeg }),
-            );
-          }
+          e.preventDefault();
+          return;
         }
-
-        e.preventDefault();
-        return;
       }
     };
 
@@ -524,7 +675,11 @@ export default function SailingAnimationBuilder() {
           : {},
       );
       setMarks(Array.isArray(parsed.marks) ? (parsed.marks as Mark[]) : []);
-      setWind(parsed.wind && typeof parsed.wind === "object" ? (parsed.wind as Wind) : { fromDeg: 210, speedKt: 18 });
+      setWind(
+        parsed.wind && typeof parsed.wind === "object"
+          ? (parsed.wind as Wind)
+          : { fromDeg: 210, speedKt: 18 },
+      );
       setStartLine(
         parsed.startLine && typeof parsed.startLine === "object"
           ? (parsed.startLine as StartLine)
@@ -536,7 +691,6 @@ export default function SailingAnimationBuilder() {
         (parsed.flagClipsByFlagId && typeof parsed.flagClipsByFlagId === "object"
           ? (parsed.flagClipsByFlagId as FlagClipsByFlagId)
           : null) ??
-        // legacy fallback if you used a different name
         (parsed.flagVisibilityById && typeof parsed.flagVisibilityById === "object"
           ? (parsed.flagVisibilityById as FlagClipsByFlagId)
           : {});
@@ -578,13 +732,23 @@ export default function SailingAnimationBuilder() {
 
   const deleteSelectedBoat = () => {
     if (!selectedBoatId) return;
+
     setBoats((prev) => prev.filter((b) => b.id !== selectedBoatId));
+
     setKeyframesByBoatId((prev) => {
       const next = { ...prev };
       delete next[selectedBoatId];
       return next;
     });
+
+    setStepsByBoatId((prev) => {
+      const next = { ...prev };
+      delete next[selectedBoatId];
+      return next;
+    });
+
     setStartLine((s) => ({ ...s, startBoatId: s.startBoatId === selectedBoatId ? null : s.startBoatId }));
+
     setSelectedBoatId(null);
   };
 
@@ -598,9 +762,8 @@ export default function SailingAnimationBuilder() {
   };
 
   const displayedForInspector = useMemo(() => {
-    const displayed = interpolateBoatsAtTime(boats, keyframesByBoatId, timeMs);
-    return selectedBoatId ? displayed.find((b) => b.id === selectedBoatId) || null : null;
-  }, [boats, keyframesByBoatId, timeMs, selectedBoatId]);
+    return selectedBoatId ? displayedBoats.find((b) => b.id === selectedBoatId) || null : null;
+  }, [displayedBoats, selectedBoatId]);
 
   const boatsOptions = useMemo(() => boats.map((b) => ({ id: b.id, label: b.label })), [boats]);
 
@@ -609,8 +772,8 @@ export default function SailingAnimationBuilder() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">Sailing Whiteboard</h1>
-            <p className="text-sm text-slate-600">Animate your sailing - Show people what happened out there.</p>
+            <h1 className="text-xl font-semibold text-slate-900">Sailing Animation Builder</h1>
+            <p className="text-sm text-slate-600">Flags are overlays with per-flag timeline clips (Option A).</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -620,6 +783,7 @@ export default function SailingAnimationBuilder() {
             >
               + Boat
             </button>
+
             <button
               className="rounded-2xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
               onClick={deleteSelectedBoat}
@@ -627,6 +791,7 @@ export default function SailingAnimationBuilder() {
             >
               Delete
             </button>
+
             <button
               className={`rounded-2xl px-3 py-2 text-sm shadow-sm ring-1 ${
                 tool === "select"
@@ -637,6 +802,7 @@ export default function SailingAnimationBuilder() {
             >
               Drag
             </button>
+
             <button
               className={`rounded-2xl px-3 py-2 text-sm shadow-sm ring-1 ${
                 tool === "rotate"
@@ -647,6 +813,7 @@ export default function SailingAnimationBuilder() {
             >
               Rotate
             </button>
+
             <label className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200">
               <input type="checkbox" checked={snapToGrid} onChange={(e) => setSnapToGrid(e.target.checked)} />
               Snap
@@ -656,24 +823,37 @@ export default function SailingAnimationBuilder() {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
           <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-            <div ref={wrapRef} className="relative aspect-16/10 w-full overflow-hidden rounded-xl ring-1 ring-slate-200">
+            <div
+              ref={wrapRef}
+              className="relative aspect-[16/10] w-full overflow-hidden rounded-xl ring-1 ring-slate-200 touch-none"
+            >
               <canvas ref={canvasRef} className="h-full w-full touch-none" />
             </div>
 
             <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
               <div className="flex items-center gap-2">
-                <button className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50" onClick={jumpToStart}>
+                <button
+                  className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+                  onClick={jumpToStart}
+                >
                   ⏮
                 </button>
+
                 <button
                   className={`rounded-xl px-3 py-2 text-sm shadow-sm ring-1 ${
-                    isPlaying ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-900 ring-slate-200 hover:bg-slate-50"
+                    isPlaying
+                      ? "bg-slate-900 text-white ring-slate-900"
+                      : "bg-white text-slate-900 ring-slate-200 hover:bg-slate-50"
                   }`}
                   onClick={togglePlay}
                 >
                   {isPlaying ? "Pause" : "Play"}
                 </button>
-                <button className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50" onClick={jumpToEnd}>
+
+                <button
+                  className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+                  onClick={jumpToEnd}
+                >
                   ⏭
                 </button>
               </div>
@@ -712,16 +892,11 @@ export default function SailingAnimationBuilder() {
             </div>
 
             <div className="mt-3">
-              <TimelineDopeSheet
+              <StepsDopeSheet
                 boats={boats}
-                keyframesByBoatId={keyframesByBoatId}
-                // ✅ Option A additions (implement in TimelineDopeSheet)
-                flags={flags}
-                flagClipsByFlagId={flagClipsByFlagId}
-                setFlagClipsByFlagId={setFlagClipsByFlagId}
-                selectedFlagId={selectedFlagId}
-                setSelectedFlagId={setSelectedFlagId}
-                //
+                stepsByBoatId={stepsByBoatId}
+                setStepsByBoatId={setStepsByBoatId}
+                displayedBoats={displayedBoats}
                 timeMs={timeMs}
                 durationMs={durationMs}
                 fps={fps}
@@ -732,9 +907,6 @@ export default function SailingAnimationBuilder() {
                   setTimeMs(t);
                 }}
                 setIsPlaying={setIsPlaying}
-                setKeyframesByBoatId={setKeyframesByBoatId}
-                autoKey={autoKey}
-                setAutoKey={setAutoKey}
               />
 
               <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
@@ -744,10 +916,16 @@ export default function SailingAnimationBuilder() {
             </div>
 
             <div className="mt-3 flex items-center justify-end gap-2">
-              <button className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50" onClick={exportProject}>
+              <button
+                className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+                onClick={exportProject}
+              >
                 Export
               </button>
-              <button className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50" onClick={importProject}>
+              <button
+                className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
+                onClick={importProject}
+              >
                 Import
               </button>
             </div>
@@ -848,7 +1026,7 @@ export default function SailingAnimationBuilder() {
                             <div>x: {displayedForInspector.x.toFixed(1)}</div>
                             <div>y: {displayedForInspector.y.toFixed(1)}</div>
                             <div>hdg: {displayedForInspector.headingDeg.toFixed(1)}°</div>
-                            <div>kfs: {(keyframesByBoatId[selectedBoatId] || []).length}</div>
+                            <div>steps: {(stepsByBoatId[selectedBoatId] || []).length}</div>
                           </div>
                         ) : null}
                       </div>
@@ -865,13 +1043,23 @@ export default function SailingAnimationBuilder() {
                     placeholder="Click Export to generate JSON, or paste JSON here then click Import."
                   />
                 </div>
+
+                <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+                  <div className="text-xs font-medium text-slate-700">Roadmap</div>
+                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                    <li>Flag clips editable directly in the dope sheet lanes</li>
+                    <li>Laylines (port/starboard) from selected boat using wind angle</li>
+                    <li>Start sequence timer (5/4/1) synced to timeMs</li>
+                    <li>Magnetic snapping: start line / marks / grid</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
         <div className="mt-4 text-xs text-slate-500">
-          Tip: Option A — a flag shows its default code when it has no clips, otherwise it shows the active clip’s code.
+          Tip: Flags are overlays. With Option A, a flag shows its default code unless clips override it at the current time.
         </div>
       </div>
     </div>
