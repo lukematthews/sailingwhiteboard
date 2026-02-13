@@ -119,12 +119,72 @@ export function interpolateBoatsAtTimeFromSteps(
       p2 = sub(p3, mul(tan1, L));
     }
 
-    const pos = bezierPoint(p0, p1, p2, p3, u);
-    const tan = bezierTangent(p0, p1, p2, p3, u);
+    // Build arc-length table
+const table = buildArcLengthTable(p0, p1, p2, p3);
+
+// Get constant-speed position
+const pos = pointAtArcLength(table, u);
+
+// For heading, compute small offset forward to estimate tangent
+    const eps = 0.001;
+    const pos2 = pointAtArcLength(table, clamp(u + eps, 0, 1));
+    const tan = sub(pos2, pos);
     const tn = norm(tan);
     const ang = Math.atan2(tn.y, tn.x);
     const headingDeg = (radToDeg(ang) + 90 + 360) % 360;
 
     return { ...b, x: pos.x, y: pos.y, headingDeg };
   });
+}
+
+function buildArcLengthTable(
+  p0: Vec2,
+  p1: Vec2,
+  p2: Vec2,
+  p3: Vec2,
+  samples = 40,
+) {
+  const pts: Vec2[] = [];
+  const dists: number[] = [];
+
+  let total = 0;
+  let prev = bezierPoint(p0, p1, p2, p3, 0);
+  pts.push(prev);
+  dists.push(0);
+
+  for (let i = 1; i <= samples; i++) {
+    const t = i / samples;
+    const pt = bezierPoint(p0, p1, p2, p3, t);
+    const dx = pt.x - prev.x;
+    const dy = pt.y - prev.y;
+    total += Math.hypot(dx, dy);
+
+    pts.push(pt);
+    dists.push(total);
+
+    prev = pt;
+  }
+
+  return { pts, dists, total };
+}
+
+function pointAtArcLength(
+  table: ReturnType<typeof buildArcLengthTable>,
+  fraction: number,
+): Vec2 {
+  const { pts, dists, total } = table;
+
+  const target = fraction * total;
+
+  for (let i = 1; i < dists.length; i++) {
+    if (dists[i] >= target) {
+      const segLen = dists[i] - dists[i - 1];
+      const localT =
+        segLen === 0 ? 0 : (target - dists[i - 1]) / segLen;
+
+      return lerpV(pts[i - 1], pts[i], localT);
+    }
+  }
+
+  return pts[pts.length - 1];
 }

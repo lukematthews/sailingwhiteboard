@@ -11,7 +11,6 @@ import { drawWind } from "./canvas/wind";
 import { drawStartLine, hitTestStartHandle } from "./canvas/startLine";
 import { drawFlag, hitTestFlag, resolveActiveFlagCode } from "./canvas/flags";
 import { sampleStepsPath } from "./animation/stepsPath";
-import { upsertKeyframe } from "./animation/keyframes";
 import { upsertStep } from "./animation/steps";
 import StepsDopeSheet from "./components/StepsDopeSheet";
 import CoursePanel from "./components/CoursePanel";
@@ -29,7 +28,7 @@ import type {
   ToolMode,
   Wind,
 } from "./types";
-import { DEFAULT_MARKS, DEFAULT_START_LINE } from "./canvas/defaults";
+import { DEFAULT_BOATS, DEFAULT_MARKS, DEFAULT_START_LINE } from "./canvas/defaults";
 import { interpolateBoatsAtTimeFromSteps } from "./animation/stepsInterpolate";
 
 const DEFAULT_DURATION_MS = 12000;
@@ -47,18 +46,6 @@ type ProjectFile = {
   flags: Flag[];
   flagClipsByFlagId: FlagClipsByFlagId;
 };
-
-function ensureStartKeyframes(boats: Boat[], prev: KeyframesByBoatId): KeyframesByBoatId {
-  let next = prev;
-  for (const b of boats) {
-    const list = next[b.id] || [];
-    const hasZero = list.some((k) => k.tMs === 0);
-    if (!hasZero) {
-      next = upsertKeyframe(next, b.id, 0, { x: b.x, y: b.y, headingDeg: b.headingDeg });
-    }
-  }
-  return next;
-}
 
 function ensureStartSteps(boats: Boat[], prev: StepsByBoatId): StepsByBoatId {
   let next: StepsByBoatId = prev;
@@ -158,21 +145,13 @@ export default function SailingAnimationBuilder() {
     return () => window.removeEventListener("flagassetloaded", h);
   }, []);
 
-  const [boats, setBoats] = useState<Boat[]>(() => [
-    { id: uid(), label: "Blue", color: "#3b82f6", x: 520, y: 170, headingDeg: 20 },
-    { id: uid(), label: "Yellow", color: "#f59e0b", x: 500, y: 235, headingDeg: 20 },
-  ]);
+  const [boats, setBoats] = useState<Boat[]>(() => DEFAULT_BOATS);
 
   // keyframes (legacy)
   const [keyframesByBoatId, setKeyframesByBoatId] = useState<KeyframesByBoatId>(() => ({}));
 
   // steps (current)
   const [stepsByBoatId, setStepsByBoatId] = useState<StepsByBoatId>(() => ({}));
-
-  // ensure defaults at t=0
-  useEffect(() => {
-    setKeyframesByBoatId((prev) => ensureStartKeyframes(boats, prev));
-  }, [boats]);
 
   useEffect(() => {
     setStepsByBoatId((prev) => ensureStartSteps(boats, prev));
@@ -772,8 +751,8 @@ export default function SailingAnimationBuilder() {
       <div className="mx-auto max-w-6xl">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">Sailing Animation Builder</h1>
-            <p className="text-sm text-slate-600">Flags are overlays with per-flag timeline clips (Option A).</p>
+            <h1 className="text-xl font-semibold text-slate-900">Sailing Whiteboard</h1>
+            <p className="text-sm text-slate-600">Show what happens out on the course.</p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
