@@ -5,13 +5,11 @@ import { uid } from "./lib/ids";
 import { formatTime, snapTime } from "./lib/time";
 import { drawBoat } from "./canvas/boat";
 import { drawGrid } from "./canvas/grid";
-import { hitTestBoat } from "./canvas/hitTest";
-import { drawMark, hitTestMark } from "./canvas/marks";
+import { drawMark } from "./canvas/marks";
 import { drawWind } from "./canvas/wind";
-import { drawStartLine, hitTestStartHandle } from "./canvas/startLine";
-import { drawFlag, hitTestFlag, resolveActiveFlagCode } from "./canvas/flags";
+import { drawStartLine } from "./canvas/startLine";
+import { drawFlag, resolveActiveFlagCode } from "./canvas/flags";
 import { sampleStepsPath } from "./animation/stepsPath";
-import { upsertStep } from "./animation/steps";
 import StepsDopeSheet from "./components/StepsDopeSheet";
 import CoursePanel from "./components/CoursePanel";
 import FlagsPanel from "./components/FlagsPanel";
@@ -35,21 +33,10 @@ import {
 } from "./canvas/defaults";
 import { interpolateBoatsAtTimeFromSteps } from "./animation/stepsInterpolate";
 
-const DEFAULT_DURATION_MS = 12000;
-const DEFAULT_FPS = 60;
-
-type ProjectFile = {
-  version: number;
-  durationMs: number;
-  fps: number;
-  boats: Boat[];
-  keyframesByBoatId: KeyframesByBoatId;
-  marks: Mark[];
-  wind: Wind;
-  startLine: StartLine;
-  flags: Flag[];
-  flagClipsByFlagId: FlagClipsByFlagId;
-};
+// NEW: extracted hooks/types
+import { useProjectIO } from "./builder/useProjectIO";
+import { useCanvasInteractions } from "./builder/useCanvasInteractions";
+import { DEFAULT_DURATION_MS, DEFAULT_FPS } from "./builder/projectTypes";
 
 function ensureStartSteps(boats: Boat[], prev: StepsByBoatId): StepsByBoatId {
   let next: StepsByBoatId = prev;
@@ -197,35 +184,6 @@ export default function SailingAnimationBuilder() {
   const [tool, setTool] = useState<ToolMode>("select");
   const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
 
-  // refs for pointer handlers
-  const boatsRef = useRef<Boat[]>(boats);
-  const toolRef = useRef<ToolMode>(tool);
-  const snapRef = useRef<boolean>(snapToGrid);
-  const timeRef = useRef<number>(timeMs);
-  const fpsRef = useRef<number>(fps);
-  const marksRef = useRef<Mark[]>(marks);
-  const startLineRef = useRef<StartLine>(startLine);
-  const flagsRef = useRef<Flag[]>(flags);
-  const flagClipsRef = useRef<FlagClipsByFlagId>(flagClipsByFlagId);
-  const playbackRateRef = useRef<number>(playbackRate);
-
-  useEffect(() => void (boatsRef.current = boats), [boats]);
-  useEffect(() => void (toolRef.current = tool), [tool]);
-  useEffect(() => void (snapRef.current = snapToGrid), [snapToGrid]);
-  useEffect(() => void (timeRef.current = timeMs), [timeMs]);
-  useEffect(() => void (fpsRef.current = fps), [fps]);
-  useEffect(() => void (marksRef.current = marks), [marks]);
-  useEffect(() => void (startLineRef.current = startLine), [startLine]);
-  useEffect(() => void (flagsRef.current = flags), [flags]);
-  useEffect(
-    () => void (flagClipsRef.current = flagClipsByFlagId),
-    [flagClipsByFlagId],
-  );
-  useEffect(
-    () => void (playbackRateRef.current = playbackRate),
-    [playbackRate],
-  );
-
   const [exportText, setExportText] = useState<string>("");
 
   const selectedBoat = useMemo(
@@ -244,24 +202,43 @@ export default function SailingAnimationBuilder() {
     [boats, stepsByBoatId, segmentsByBoatId, timeMs],
   );
 
-  const displayedBoatsRef = useRef<Boat[]>(displayedBoats);
+  // --- Import/Export (extracted, identical behavior)
+  const { exportProject, importProject } = useProjectIO({
+    durationMs,
+    fps,
+    boats,
+    keyframesByBoatId,
+    marks,
+    wind,
+    startLine,
+    flags,
+    flagClipsByFlagId,
+
+    setDurationMs,
+    setFps,
+    setBoats,
+    setKeyframesByBoatId,
+    setMarks,
+    setWind,
+    setStartLine,
+    setFlags,
+    setFlagClipsByFlagId,
+
+    setTimeMs,
+    setIsPlaying,
+    setSelectedBoatId,
+    setSelectedFlagId,
+
+    exportText,
+    setExportText,
+  });
+
+  // playback loop uses a ref (so rate changes don’t restart the effect)
+  const playbackRateRef = useRef<number>(playbackRate);
   useEffect(
-    () => void (displayedBoatsRef.current = displayedBoats),
-    [displayedBoats],
+    () => void (playbackRateRef.current = playbackRate),
+    [playbackRate],
   );
-
-  // helpers used by dope sheet scrubber controls
-  const togglePlay = () => setIsPlaying((p) => !p);
-
-  const jumpToStart = () => {
-    setIsPlaying(false);
-    setTimeMs(0);
-  };
-
-  const jumpToEnd = () => {
-    setIsPlaying(false);
-    setTimeMs(durationMs);
-  };
 
   // animation loop (speed affects playback only)
   useEffect(() => {
@@ -291,6 +268,27 @@ export default function SailingAnimationBuilder() {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [isPlaying, durationMs]);
+
+  // pointer interactions (extracted, identical behavior)
+  useCanvasInteractions({
+    canvasRef,
+    autoKey,
+    tool,
+    snapToGrid,
+    timeMs,
+    fps,
+    marks,
+    startLine,
+    flags,
+    flagClipsByFlagId,
+    displayedBoats,
+    setStepsByBoatId,
+    setMarks,
+    setStartLine,
+    setFlags,
+    setSelectedBoatId,
+    setSelectedFlagId,
+  });
 
   // draw
   useEffect(() => {
@@ -387,8 +385,7 @@ export default function SailingAnimationBuilder() {
     }
 
     // current boats (at playhead)
-    const displayed = displayedBoats;
-    for (const b of displayed) {
+    for (const b of displayedBoats) {
       drawBoat(ctx, b);
 
       if (b.id === selectedBoatId) {
@@ -447,343 +444,8 @@ export default function SailingAnimationBuilder() {
     flagClipsByFlagId,
     selectedFlagId,
     assetTick,
+    displayedBoats,
   ]);
-
-  // pointer interactions (flags + start line + marks + boats)
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    type DragMode =
-      | { kind: "flag"; flagId: string; dragOffset: { x: number; y: number } }
-      | { kind: "start"; handle: "committee" | "pin" }
-      | { kind: "mark"; markId: string; dragOffset: { x: number; y: number } }
-      | {
-          kind: "boat";
-          boatId: string;
-          mode: "drag" | "rotate";
-          dragOffset: { x: number; y: number };
-        }
-      | null;
-
-    let active: DragMode = null;
-
-    const getPoint = (e: PointerEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    };
-
-    const onDown = (e: PointerEvent) => {
-      const p = getPoint(e);
-
-      // start line handles
-      const h = hitTestStartHandle(p.x, p.y, startLineRef.current);
-      if (h) {
-        active = { kind: "start", handle: h };
-        setSelectedBoatId(null);
-        setSelectedFlagId(null);
-        try {
-          canvas.setPointerCapture(e.pointerId);
-        } catch {}
-        e.preventDefault();
-        return;
-      }
-
-      // flags (selectable only if visible now)
-      const flagsNow = flagsRef.current;
-      for (let i = flagsNow.length - 1; i >= 0; i--) {
-        const f = flagsNow[i];
-        const codeNow = resolveActiveFlagCode(
-          f,
-          flagClipsRef.current[f.id],
-          timeRef.current,
-        );
-        if (!codeNow) continue;
-
-        if (hitTestFlag(p.x, p.y, f)) {
-          active = {
-            kind: "flag",
-            flagId: f.id,
-            dragOffset: { x: p.x - f.x, y: p.y - f.y },
-          };
-          setSelectedFlagId(f.id);
-          setSelectedBoatId(null);
-          try {
-            canvas.setPointerCapture(e.pointerId);
-          } catch {}
-          e.preventDefault();
-          return;
-        }
-      }
-
-      // marks
-      const marksNow = marksRef.current;
-      for (let i = marksNow.length - 1; i >= 0; i--) {
-        const m = marksNow[i];
-        if (hitTestMark(p.x, p.y, m)) {
-          active = {
-            kind: "mark",
-            markId: m.id,
-            dragOffset: { x: p.x - m.x, y: p.y - m.y },
-          };
-          setSelectedBoatId(null);
-          setSelectedFlagId(null);
-          try {
-            canvas.setPointerCapture(e.pointerId);
-          } catch {}
-          e.preventDefault();
-          return;
-        }
-      }
-
-      // boats
-      const boatsNow = displayedBoatsRef.current;
-      let hit: Boat | null = null;
-      for (let i = boatsNow.length - 1; i >= 0; i--) {
-        const b = boatsNow[i];
-        if (hitTestBoat(p.x, p.y, b)) {
-          hit = b;
-          break;
-        }
-      }
-
-      if (!hit) {
-        active = null;
-        setSelectedBoatId(null);
-        setSelectedFlagId(null);
-        return;
-      }
-
-      setSelectedBoatId(hit.id);
-      setSelectedFlagId(null);
-
-      const toolNow = toolRef.current;
-      if (toolNow === "rotate") {
-        active = {
-          kind: "boat",
-          boatId: hit.id,
-          mode: "rotate",
-          dragOffset: { x: 0, y: 0 },
-        };
-      } else {
-        active = {
-          kind: "boat",
-          boatId: hit.id,
-          mode: "drag",
-          dragOffset: { x: p.x - hit.x, y: p.y - hit.y },
-        };
-      }
-
-      try {
-        canvas.setPointerCapture(e.pointerId);
-      } catch {}
-      e.preventDefault();
-    };
-
-    const onMove = (e: PointerEvent) => {
-      if (!active) return;
-      const p = getPoint(e);
-
-      if (active.kind === "start") {
-        const handle = active.handle;
-        setStartLine((s) => ({ ...s, [handle]: { x: p.x, y: p.y } }));
-        e.preventDefault();
-        return;
-      }
-
-      if (active.kind === "flag") {
-        const { flagId, dragOffset } = active;
-        const snapNow = snapRef.current;
-
-        setFlags((prev) =>
-          prev.map((f) => {
-            if (f.id !== flagId) return f;
-            let nx = p.x - dragOffset.x;
-            let ny = p.y - dragOffset.y;
-            if (snapNow) {
-              const s = 5;
-              nx = Math.round(nx / s) * s;
-              ny = Math.round(ny / s) * s;
-            }
-            return { ...f, x: nx, y: ny };
-          }),
-        );
-        e.preventDefault();
-        return;
-      }
-
-      if (active.kind === "mark") {
-        const markId = active.markId;
-        const offset = active.dragOffset;
-        const snapNow = snapRef.current;
-
-        setMarks((prev) =>
-          prev.map((m) => {
-            if (m.id !== markId) return m;
-
-            let nx = p.x - offset.x;
-            let ny = p.y - offset.y;
-
-            if (snapNow) {
-              const s = 5;
-              nx = Math.round(nx / s) * s;
-              ny = Math.round(ny / s) * s;
-            }
-            return { ...m, x: nx, y: ny };
-          }),
-        );
-
-        e.preventDefault();
-        return;
-      }
-
-      if (active.kind === "boat") {
-        const boatId = active.boatId;
-        const mode = active.mode;
-        const offset = active.dragOffset;
-        const snapNow = snapRef.current;
-
-        if (mode === "drag") {
-          const nowT = snapTime(timeRef.current, fpsRef.current);
-
-          const bNow = displayedBoatsRef.current.find((x) => x.id === boatId);
-          if (!bNow) return;
-
-          let nx = p.x - offset.x;
-          let ny = p.y - offset.y;
-
-          if (snapNow) {
-            const s = 5;
-            nx = Math.round(nx / s) * s;
-            ny = Math.round(ny / s) * s;
-          }
-
-          setStepsByBoatId((prev) =>
-            upsertStep(prev, boatId, nowT, { x: nx, y: ny }),
-          );
-          e.preventDefault();
-          return;
-        }
-
-        if (mode === "rotate") {
-          const nowT = snapTime(timeRef.current, fpsRef.current);
-
-          const bNow = displayedBoatsRef.current.find((x) => x.id === boatId);
-          if (!bNow) return;
-
-          const dx = p.x - bNow.x;
-          const dy = p.y - bNow.y;
-          const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
-          const heading = (ang + 90 + 360) % 360;
-
-          setStepsByBoatId((prev) =>
-            upsertStep(prev, boatId, nowT, {
-              x: bNow.x,
-              y: bNow.y,
-              headingMode: "manual",
-              headingDeg: heading,
-            }),
-          );
-
-          e.preventDefault();
-          return;
-        }
-      }
-    };
-
-    const onUp = (e: PointerEvent) => {
-      active = null;
-      try {
-        canvas.releasePointerCapture(e.pointerId);
-      } catch {}
-    };
-
-    canvas.addEventListener("pointerdown", onDown);
-    canvas.addEventListener("pointermove", onMove);
-    canvas.addEventListener("pointerup", onUp);
-    canvas.addEventListener("pointercancel", onUp);
-
-    return () => {
-      canvas.removeEventListener("pointerdown", onDown);
-      canvas.removeEventListener("pointermove", onMove);
-      canvas.removeEventListener("pointerup", onUp);
-      canvas.removeEventListener("pointercancel", onUp);
-    };
-  }, [autoKey]);
-
-  // import/export
-  const exportProject = () => {
-    const project: ProjectFile = {
-      version: 3,
-      durationMs,
-      fps,
-      boats,
-      keyframesByBoatId,
-      marks,
-      wind,
-      startLine,
-      flags,
-      flagClipsByFlagId,
-    };
-    setExportText(JSON.stringify(project, null, 2));
-  };
-
-  const importProject = () => {
-    try {
-      const parsed = JSON.parse(exportText) as Partial<ProjectFile> & {
-        flagVisibilityById?: unknown;
-      };
-      if (!parsed || typeof parsed !== "object") return;
-
-      setDurationMs(
-        typeof parsed.durationMs === "number"
-          ? parsed.durationMs
-          : DEFAULT_DURATION_MS,
-      );
-      setFps(typeof parsed.fps === "number" ? parsed.fps : DEFAULT_FPS);
-      setBoats(Array.isArray(parsed.boats) ? (parsed.boats as Boat[]) : []);
-      setKeyframesByBoatId(
-        parsed.keyframesByBoatId && typeof parsed.keyframesByBoatId === "object"
-          ? (parsed.keyframesByBoatId as KeyframesByBoatId)
-          : {},
-      );
-      setMarks(Array.isArray(parsed.marks) ? (parsed.marks as Mark[]) : []);
-      setWind(
-        parsed.wind && typeof parsed.wind === "object"
-          ? (parsed.wind as Wind)
-          : { fromDeg: 210, speedKt: 18 },
-      );
-      setStartLine(
-        parsed.startLine && typeof parsed.startLine === "object"
-          ? (parsed.startLine as StartLine)
-          : {
-              committee: { x: 380, y: 120 },
-              pin: { x: 660, y: 150 },
-              startBoatId: null,
-            },
-      );
-      setFlags(Array.isArray(parsed.flags) ? (parsed.flags as Flag[]) : []);
-
-      const clips =
-        (parsed.flagClipsByFlagId &&
-        typeof parsed.flagClipsByFlagId === "object"
-          ? (parsed.flagClipsByFlagId as FlagClipsByFlagId)
-          : null) ??
-        (parsed.flagVisibilityById &&
-        typeof parsed.flagVisibilityById === "object"
-          ? (parsed.flagVisibilityById as FlagClipsByFlagId)
-          : {});
-
-      setFlagClipsByFlagId(clips);
-
-      setTimeMs(0);
-      setIsPlaying(false);
-      setSelectedBoatId(null);
-      setSelectedFlagId(null);
-    } catch {
-      // ignore
-    }
-  };
 
   const getCanvasCenter = () => {
     const el = wrapRef.current;
@@ -922,6 +584,7 @@ export default function SailingAnimationBuilder() {
             >
               <canvas ref={canvasRef} className="h-full w-full touch-none" />
             </div>
+
             <div className="mt-3 flex flex-wrap items-center justify-end gap-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
               <div className="flex items-center gap-2 text-sm text-slate-700">
                 <span className="text-slate-500">Duration</span>
@@ -955,6 +618,7 @@ export default function SailingAnimationBuilder() {
                 />
               </div>
             </div>
+
             <div className="mt-3">
               <StepsDopeSheet
                 boats={boats}
