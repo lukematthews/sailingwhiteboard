@@ -1,5 +1,5 @@
 // canvas/flags.ts
-// Flag rendering + hit testing + timeline resolution (Option A: each flag has its own lane)
+// Flag rendering + hit testing + timeline resolution
 
 import type { Flag, FlagCode, FlagCodeClip, FlagClipsByFlagId } from "../types";
 import { getFlagSvg } from "./flagAssets";
@@ -14,7 +14,6 @@ export function resolveActiveFlagCode(
   clips: FlagClipsByFlagId[string] | undefined,
   timeMs: number,
 ): FlagCode | null {
-  // Option A:
   // - If clips exist -> resolve by time
   // - If no clips -> always visible using flag.code
   if (!clips || clips.length === 0) return flag.code ?? null;

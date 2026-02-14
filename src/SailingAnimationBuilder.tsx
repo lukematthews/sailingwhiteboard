@@ -28,7 +28,11 @@ import type {
   ToolMode,
   Wind,
 } from "./types";
-import { DEFAULT_BOATS, DEFAULT_MARKS, DEFAULT_START_LINE } from "./canvas/defaults";
+import {
+  DEFAULT_BOATS,
+  DEFAULT_MARKS,
+  DEFAULT_START_LINE,
+} from "./canvas/defaults";
 import { interpolateBoatsAtTimeFromSteps } from "./animation/stepsInterpolate";
 
 const DEFAULT_DURATION_MS = 12000;
@@ -53,8 +57,17 @@ function ensureStartSteps(boats: Boat[], prev: StepsByBoatId): StepsByBoatId {
     const list = next[b.id] ?? [];
     const hasZero = list.some((s) => s.tMs === 0);
     if (!hasZero) {
-      const newStep: Step = { id: uid(), tMs: 0, x: b.x, y: b.y, headingMode: "auto" };
-      next = { ...next, [b.id]: [...list, newStep].sort((a, c) => a.tMs - c.tMs) };
+      const newStep: Step = {
+        id: uid(),
+        tMs: 0,
+        x: b.x,
+        y: b.y,
+        headingMode: "auto",
+      };
+      next = {
+        ...next,
+        [b.id]: [...list, newStep].sort((a, c) => a.tMs - c.tMs),
+      };
     }
   }
   return next;
@@ -104,7 +117,12 @@ function roundRectPath(
   ctx.closePath();
 }
 
-function drawStepBadge(ctx: CanvasRenderingContext2D, x: number, y: number, text: string) {
+function drawStepBadge(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  text: string,
+) {
   ctx.save();
   ctx.font = "11px ui-sans-serif, system-ui";
   ctx.textAlign = "center";
@@ -132,6 +150,7 @@ export default function SailingAnimationBuilder() {
   const [fps, setFps] = useState<number>(DEFAULT_FPS);
   const [timeMs, setTimeMs] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [playbackRate, setPlaybackRate] = useState<number>(1);
 
   // (kept) other state
   const [autoKey] = useState<boolean>(true);
@@ -148,7 +167,9 @@ export default function SailingAnimationBuilder() {
   const [boats, setBoats] = useState<Boat[]>(() => DEFAULT_BOATS);
 
   // keyframes (legacy)
-  const [keyframesByBoatId, setKeyframesByBoatId] = useState<KeyframesByBoatId>(() => ({}));
+  const [keyframesByBoatId, setKeyframesByBoatId] = useState<KeyframesByBoatId>(
+    () => ({}),
+  );
 
   // steps (current)
   const [stepsByBoatId, setStepsByBoatId] = useState<StepsByBoatId>(() => ({}));
@@ -160,11 +181,15 @@ export default function SailingAnimationBuilder() {
   // course
   const [marks, setMarks] = useState<Mark[]>(() => DEFAULT_MARKS);
   const [wind, setWind] = useState<Wind>(() => ({ fromDeg: 0, speedKt: 15 }));
-  const [startLine, setStartLine] = useState<StartLine>(() => DEFAULT_START_LINE);
+  const [startLine, setStartLine] = useState<StartLine>(
+    () => DEFAULT_START_LINE,
+  );
 
   // flags
   const [flags, setFlags] = useState<Flag[]>([]);
-  const [flagClipsByFlagId, setFlagClipsByFlagId] = useState<FlagClipsByFlagId>(() => ({}));
+  const [flagClipsByFlagId, setFlagClipsByFlagId] = useState<FlagClipsByFlagId>(
+    () => ({}),
+  );
   const [selectedFlagId, setSelectedFlagId] = useState<string | null>(null);
 
   // selection + tool
@@ -182,6 +207,7 @@ export default function SailingAnimationBuilder() {
   const startLineRef = useRef<StartLine>(startLine);
   const flagsRef = useRef<Flag[]>(flags);
   const flagClipsRef = useRef<FlagClipsByFlagId>(flagClipsByFlagId);
+  const playbackRateRef = useRef<number>(playbackRate);
 
   useEffect(() => void (boatsRef.current = boats), [boats]);
   useEffect(() => void (toolRef.current = tool), [tool]);
@@ -191,7 +217,14 @@ export default function SailingAnimationBuilder() {
   useEffect(() => void (marksRef.current = marks), [marks]);
   useEffect(() => void (startLineRef.current = startLine), [startLine]);
   useEffect(() => void (flagsRef.current = flags), [flags]);
-  useEffect(() => void (flagClipsRef.current = flagClipsByFlagId), [flagClipsByFlagId]);
+  useEffect(
+    () => void (flagClipsRef.current = flagClipsByFlagId),
+    [flagClipsByFlagId],
+  );
+  useEffect(
+    () => void (playbackRateRef.current = playbackRate),
+    [playbackRate],
+  );
 
   const [exportText, setExportText] = useState<string>("");
 
@@ -201,14 +234,36 @@ export default function SailingAnimationBuilder() {
   );
 
   const displayedBoats = useMemo(
-    () => interpolateBoatsAtTimeFromSteps(boats, stepsByBoatId, segmentsByBoatId, timeMs),
+    () =>
+      interpolateBoatsAtTimeFromSteps(
+        boats,
+        stepsByBoatId,
+        segmentsByBoatId,
+        timeMs,
+      ),
     [boats, stepsByBoatId, segmentsByBoatId, timeMs],
   );
 
   const displayedBoatsRef = useRef<Boat[]>(displayedBoats);
-  useEffect(() => void (displayedBoatsRef.current = displayedBoats), [displayedBoats]);
+  useEffect(
+    () => void (displayedBoatsRef.current = displayedBoats),
+    [displayedBoats],
+  );
 
-  // animation loop
+  // helpers used by dope sheet scrubber controls
+  const togglePlay = () => setIsPlaying((p) => !p);
+
+  const jumpToStart = () => {
+    setIsPlaying(false);
+    setTimeMs(0);
+  };
+
+  const jumpToEnd = () => {
+    setIsPlaying(false);
+    setTimeMs(durationMs);
+  };
+
+  // animation loop (speed affects playback only)
   useEffect(() => {
     if (!isPlaying) return;
 
@@ -219,8 +274,10 @@ export default function SailingAnimationBuilder() {
       const dt = now - last;
       last = now;
 
+      const rate = playbackRateRef.current || 1;
+
       setTimeMs((t) => {
-        const next = t + dt;
+        const next = t + dt * rate;
         if (next >= durationMs) {
           setIsPlaying(false);
           return durationMs;
@@ -275,7 +332,9 @@ export default function SailingAnimationBuilder() {
       if (pts.length < 2) continue;
 
       ctx.beginPath();
-      pts.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+      pts.forEach((pt, i) =>
+        i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y),
+      );
       ctx.strokeStyle = "rgba(0,0,0,0.18)";
       ctx.stroke();
     }
@@ -304,7 +363,8 @@ export default function SailingAnimationBuilder() {
         if (!poseAtStep) continue;
 
         const isClosest =
-          i === closestI && Math.abs((laneSteps[closestI]?.tMs ?? 0) - snappedNow) <= frame;
+          i === closestI &&
+          Math.abs((laneSteps[closestI]?.tMs ?? 0) - snappedNow) <= frame;
 
         ctx.save();
 
@@ -366,7 +426,11 @@ export default function SailingAnimationBuilder() {
     ctx.fillStyle = "rgba(0,0,0,0.7)";
     ctx.font = "12px ui-sans-serif, system-ui";
     ctx.textAlign = "left";
-    ctx.fillText(`t = ${formatTime(timeMs)} / ${formatTime(durationMs)}`, 12, 18);
+    ctx.fillText(
+      `t = ${formatTime(timeMs)} / ${formatTime(durationMs)}`,
+      12,
+      18,
+    );
     ctx.restore();
   }, [
     boats,
@@ -394,7 +458,12 @@ export default function SailingAnimationBuilder() {
       | { kind: "flag"; flagId: string; dragOffset: { x: number; y: number } }
       | { kind: "start"; handle: "committee" | "pin" }
       | { kind: "mark"; markId: string; dragOffset: { x: number; y: number } }
-      | { kind: "boat"; boatId: string; mode: "drag" | "rotate"; dragOffset: { x: number; y: number } }
+      | {
+          kind: "boat";
+          boatId: string;
+          mode: "drag" | "rotate";
+          dragOffset: { x: number; y: number };
+        }
       | null;
 
     let active: DragMode = null;
@@ -424,11 +493,19 @@ export default function SailingAnimationBuilder() {
       const flagsNow = flagsRef.current;
       for (let i = flagsNow.length - 1; i >= 0; i--) {
         const f = flagsNow[i];
-        const codeNow = resolveActiveFlagCode(f, flagClipsRef.current[f.id], timeRef.current);
+        const codeNow = resolveActiveFlagCode(
+          f,
+          flagClipsRef.current[f.id],
+          timeRef.current,
+        );
         if (!codeNow) continue;
 
         if (hitTestFlag(p.x, p.y, f)) {
-          active = { kind: "flag", flagId: f.id, dragOffset: { x: p.x - f.x, y: p.y - f.y } };
+          active = {
+            kind: "flag",
+            flagId: f.id,
+            dragOffset: { x: p.x - f.x, y: p.y - f.y },
+          };
           setSelectedFlagId(f.id);
           setSelectedBoatId(null);
           try {
@@ -444,7 +521,11 @@ export default function SailingAnimationBuilder() {
       for (let i = marksNow.length - 1; i >= 0; i--) {
         const m = marksNow[i];
         if (hitTestMark(p.x, p.y, m)) {
-          active = { kind: "mark", markId: m.id, dragOffset: { x: p.x - m.x, y: p.y - m.y } };
+          active = {
+            kind: "mark",
+            markId: m.id,
+            dragOffset: { x: p.x - m.x, y: p.y - m.y },
+          };
           setSelectedBoatId(null);
           setSelectedFlagId(null);
           try {
@@ -478,7 +559,12 @@ export default function SailingAnimationBuilder() {
 
       const toolNow = toolRef.current;
       if (toolNow === "rotate") {
-        active = { kind: "boat", boatId: hit.id, mode: "rotate", dragOffset: { x: 0, y: 0 } };
+        active = {
+          kind: "boat",
+          boatId: hit.id,
+          mode: "rotate",
+          dragOffset: { x: 0, y: 0 },
+        };
       } else {
         active = {
           kind: "boat",
@@ -572,7 +658,9 @@ export default function SailingAnimationBuilder() {
             ny = Math.round(ny / s) * s;
           }
 
-          setStepsByBoatId((prev) => upsertStep(prev, boatId, nowT, { x: nx, y: ny }));
+          setStepsByBoatId((prev) =>
+            upsertStep(prev, boatId, nowT, { x: nx, y: ny }),
+          );
           e.preventDefault();
           return;
         }
@@ -642,10 +730,16 @@ export default function SailingAnimationBuilder() {
 
   const importProject = () => {
     try {
-      const parsed = JSON.parse(exportText) as Partial<ProjectFile> & { flagVisibilityById?: unknown };
+      const parsed = JSON.parse(exportText) as Partial<ProjectFile> & {
+        flagVisibilityById?: unknown;
+      };
       if (!parsed || typeof parsed !== "object") return;
 
-      setDurationMs(typeof parsed.durationMs === "number" ? parsed.durationMs : DEFAULT_DURATION_MS);
+      setDurationMs(
+        typeof parsed.durationMs === "number"
+          ? parsed.durationMs
+          : DEFAULT_DURATION_MS,
+      );
       setFps(typeof parsed.fps === "number" ? parsed.fps : DEFAULT_FPS);
       setBoats(Array.isArray(parsed.boats) ? (parsed.boats as Boat[]) : []);
       setKeyframesByBoatId(
@@ -662,15 +756,21 @@ export default function SailingAnimationBuilder() {
       setStartLine(
         parsed.startLine && typeof parsed.startLine === "object"
           ? (parsed.startLine as StartLine)
-          : { committee: { x: 380, y: 120 }, pin: { x: 660, y: 150 }, startBoatId: null },
+          : {
+              committee: { x: 380, y: 120 },
+              pin: { x: 660, y: 150 },
+              startBoatId: null,
+            },
       );
       setFlags(Array.isArray(parsed.flags) ? (parsed.flags as Flag[]) : []);
 
       const clips =
-        (parsed.flagClipsByFlagId && typeof parsed.flagClipsByFlagId === "object"
+        (parsed.flagClipsByFlagId &&
+        typeof parsed.flagClipsByFlagId === "object"
           ? (parsed.flagClipsByFlagId as FlagClipsByFlagId)
           : null) ??
-        (parsed.flagVisibilityById && typeof parsed.flagVisibilityById === "object"
+        (parsed.flagVisibilityById &&
+        typeof parsed.flagVisibilityById === "object"
           ? (parsed.flagVisibilityById as FlagClipsByFlagId)
           : {});
 
@@ -726,33 +826,43 @@ export default function SailingAnimationBuilder() {
       return next;
     });
 
-    setStartLine((s) => ({ ...s, startBoatId: s.startBoatId === selectedBoatId ? null : s.startBoatId }));
+    setStartLine((s) => ({
+      ...s,
+      startBoatId: s.startBoatId === selectedBoatId ? null : s.startBoatId,
+    }));
 
     setSelectedBoatId(null);
   };
 
-  const togglePlay = () => setIsPlaying((p) => !p);
-  const jumpToStart = () => setTimeMs(0);
-  const jumpToEnd = () => setTimeMs(durationMs);
-
   const updateSelectedBoat = (patch: Partial<Boat>) => {
     if (!selectedBoatId) return;
-    setBoats((prev) => prev.map((b) => (b.id === selectedBoatId ? { ...b, ...patch } : b)));
+    setBoats((prev) =>
+      prev.map((b) => (b.id === selectedBoatId ? { ...b, ...patch } : b)),
+    );
   };
 
   const displayedForInspector = useMemo(() => {
-    return selectedBoatId ? displayedBoats.find((b) => b.id === selectedBoatId) || null : null;
+    return selectedBoatId
+      ? displayedBoats.find((b) => b.id === selectedBoatId) || null
+      : null;
   }, [displayedBoats, selectedBoatId]);
 
-  const boatsOptions = useMemo(() => boats.map((b) => ({ id: b.id, label: b.label })), [boats]);
+  const boatsOptions = useMemo(
+    () => boats.map((b) => ({ id: b.id, label: b.label })),
+    [boats],
+  );
 
   return (
     <div className="min-h-screen bg-slate-50 p-4">
       <div className="mx-auto max-w-6xl">
         <div className="mb-3 flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold text-slate-900">Sailing Whiteboard</h1>
-            <p className="text-sm text-slate-600">Show what happens out on the course.</p>
+            <h1 className="text-xl font-semibold text-slate-900">
+              Sailing Whiteboard
+            </h1>
+            <p className="text-sm text-slate-600">
+              Show what happens out on the course.
+            </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
@@ -794,7 +904,11 @@ export default function SailingAnimationBuilder() {
             </button>
 
             <label className="flex items-center gap-2 rounded-2xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200">
-              <input type="checkbox" checked={snapToGrid} onChange={(e) => setSnapToGrid(e.target.checked)} />
+              <input
+                type="checkbox"
+                checked={snapToGrid}
+                onChange={(e) => setSnapToGrid(e.target.checked)}
+              />
               Snap
             </label>
           </div>
@@ -808,68 +922,39 @@ export default function SailingAnimationBuilder() {
             >
               <canvas ref={canvasRef} className="h-full w-full touch-none" />
             </div>
-
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-              <div className="flex items-center gap-2">
-                <button
-                  className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
-                  onClick={jumpToStart}
-                >
-                  ⏮
-                </button>
-
-                <button
-                  className={`rounded-xl px-3 py-2 text-sm shadow-sm ring-1 ${
-                    isPlaying
-                      ? "bg-slate-900 text-white ring-slate-900"
-                      : "bg-white text-slate-900 ring-slate-200 hover:bg-slate-50"
-                  }`}
-                  onClick={togglePlay}
-                >
-                  {isPlaying ? "Pause" : "Play"}
-                </button>
-
-                <button
-                  className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
-                  onClick={jumpToEnd}
-                >
-                  ⏭
-                </button>
+            <div className="mt-3 flex flex-wrap items-center justify-end gap-3 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+              <div className="flex items-center gap-2 text-sm text-slate-700">
+                <span className="text-slate-500">Duration</span>
+                <input
+                  className="w-24 rounded-lg bg-white px-2 py-1 ring-1 ring-slate-200"
+                  type="number"
+                  value={Math.round(durationMs / 1000)}
+                  min={1}
+                  max={120}
+                  onChange={(e) => {
+                    const s = Number(e.target.value || 12);
+                    const ms = clamp(s * 1000, 1000, 120000);
+                    setDurationMs(ms);
+                    setTimeMs((t) => clamp(t, 0, ms));
+                  }}
+                />
+                <span className="text-slate-500">s</span>
               </div>
 
-              <div className="flex items-center gap-3 text-sm text-slate-700">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500">Duration</span>
-                  <input
-                    className="w-24 rounded-lg bg-white px-2 py-1 ring-1 ring-slate-200"
-                    type="number"
-                    value={Math.round(durationMs / 1000)}
-                    min={1}
-                    max={120}
-                    onChange={(e) => {
-                      const s = Number(e.target.value || 12);
-                      const ms = clamp(s * 1000, 1000, 120000);
-                      setDurationMs(ms);
-                      setTimeMs((t) => clamp(t, 0, ms));
-                    }}
-                  />
-                  <span className="text-slate-500">s</span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-500">FPS</span>
-                  <input
-                    className="w-20 rounded-lg bg-white px-2 py-1 ring-1 ring-slate-200"
-                    type="number"
-                    value={fps}
-                    min={12}
-                    max={120}
-                    onChange={(e) => setFps(clamp(Number(e.target.value || 60), 12, 120))}
-                  />
-                </div>
+              <div className="flex items-center gap-2 text-sm text-slate-700">
+                <span className="text-slate-500">FPS</span>
+                <input
+                  className="w-20 rounded-lg bg-white px-2 py-1 ring-1 ring-slate-200"
+                  type="number"
+                  value={fps}
+                  min={12}
+                  max={120}
+                  onChange={(e) =>
+                    setFps(clamp(Number(e.target.value || 60), 12, 120))
+                  }
+                />
               </div>
             </div>
-
             <div className="mt-3">
               <StepsDopeSheet
                 boats={boats}
@@ -886,12 +971,14 @@ export default function SailingAnimationBuilder() {
                   setTimeMs(t);
                 }}
                 setIsPlaying={setIsPlaying}
+                isPlaying={isPlaying}
+                onPlaybackRateChange={(r) => setPlaybackRate(r)}
+                flags={flags}
+                flagClipsByFlagId={flagClipsByFlagId}
+                setFlagClipsByFlagId={setFlagClipsByFlagId}
+                selectedFlagId={selectedFlagId}
+                setSelectedFlagId={setSelectedFlagId}
               />
-
-              <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
-                <span>{formatTime(timeMs)}</span>
-                <span>{formatTime(durationMs)}</span>
-              </div>
             </div>
 
             <div className="mt-3 flex items-center justify-end gap-2">
@@ -933,15 +1020,23 @@ export default function SailingAnimationBuilder() {
             />
 
             <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-              <h2 className="text-sm font-semibold text-slate-900">Inspector</h2>
-              <p className="mt-1 text-xs text-slate-600">Select a boat and adjust properties.</p>
+              <h2 className="text-sm font-semibold text-slate-900">
+                Inspector
+              </h2>
+              <p className="mt-1 text-xs text-slate-600">
+                Select a boat and adjust properties.
+              </p>
 
               <div className="mt-3 space-y-3">
                 <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-                  <div className="text-xs font-medium text-slate-700">Selected Boat</div>
+                  <div className="text-xs font-medium text-slate-700">
+                    Selected Boat
+                  </div>
 
                   {!selectedBoatId || !selectedBoat ? (
-                    <div className="mt-2 text-sm text-slate-600">No boat selected.</div>
+                    <div className="mt-2 text-sm text-slate-600">
+                      No boat selected.
+                    </div>
                   ) : (
                     <div className="mt-2 space-y-3">
                       <label className="block">
@@ -949,7 +1044,9 @@ export default function SailingAnimationBuilder() {
                         <input
                           className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-200"
                           value={selectedBoat.label}
-                          onChange={(e) => updateSelectedBoat({ label: e.target.value })}
+                          onChange={(e) =>
+                            updateSelectedBoat({ label: e.target.value })
+                          }
                         />
                       </label>
 
@@ -959,7 +1056,9 @@ export default function SailingAnimationBuilder() {
                           className="mt-1 h-10 w-full rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-200"
                           type="color"
                           value={selectedBoat.color}
-                          onChange={(e) => updateSelectedBoat({ color: e.target.value })}
+                          onChange={(e) =>
+                            updateSelectedBoat({ color: e.target.value })
+                          }
                         />
                       </label>
 
@@ -970,7 +1069,9 @@ export default function SailingAnimationBuilder() {
                             className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-200"
                             type="number"
                             value={Math.round(selectedBoat.x)}
-                            onChange={(e) => updateSelectedBoat({ x: Number(e.target.value) })}
+                            onChange={(e) =>
+                              updateSelectedBoat({ x: Number(e.target.value) })
+                            }
                           />
                         </label>
                         <label className="block">
@@ -979,13 +1080,17 @@ export default function SailingAnimationBuilder() {
                             className="mt-1 w-full rounded-lg bg-white px-3 py-2 text-sm ring-1 ring-slate-200"
                             type="number"
                             value={Math.round(selectedBoat.y)}
-                            onChange={(e) => updateSelectedBoat({ y: Number(e.target.value) })}
+                            onChange={(e) =>
+                              updateSelectedBoat({ y: Number(e.target.value) })
+                            }
                           />
                         </label>
                       </div>
 
                       <label className="block">
-                        <div className="text-xs text-slate-600">Heading (deg)</div>
+                        <div className="text-xs text-slate-600">
+                          Heading (deg)
+                        </div>
                         <input
                           className="mt-1 w-full"
                           type="range"
@@ -993,19 +1098,33 @@ export default function SailingAnimationBuilder() {
                           max={359}
                           step={1}
                           value={Math.round(selectedBoat.headingDeg) % 360}
-                          onChange={(e) => updateSelectedBoat({ headingDeg: Number(e.target.value) })}
+                          onChange={(e) =>
+                            updateSelectedBoat({
+                              headingDeg: Number(e.target.value),
+                            })
+                          }
                         />
-                        <div className="mt-1 text-xs text-slate-600">{Math.round(selectedBoat.headingDeg) % 360}°</div>
+                        <div className="mt-1 text-xs text-slate-600">
+                          {Math.round(selectedBoat.headingDeg) % 360}°
+                        </div>
                       </label>
 
                       <div className="rounded-lg bg-white p-2 text-xs text-slate-700 ring-1 ring-slate-200">
-                        <div className="font-medium text-slate-800">Displayed at current time</div>
+                        <div className="font-medium text-slate-800">
+                          Displayed at current time
+                        </div>
                         {displayedForInspector ? (
                           <div className="mt-1 grid grid-cols-2 gap-2">
                             <div>x: {displayedForInspector.x.toFixed(1)}</div>
                             <div>y: {displayedForInspector.y.toFixed(1)}</div>
-                            <div>hdg: {displayedForInspector.headingDeg.toFixed(1)}°</div>
-                            <div>steps: {(stepsByBoatId[selectedBoatId] || []).length}</div>
+                            <div>
+                              hdg: {displayedForInspector.headingDeg.toFixed(1)}
+                              °
+                            </div>
+                            <div>
+                              steps:{" "}
+                              {(stepsByBoatId[selectedBoatId] || []).length}
+                            </div>
                           </div>
                         ) : null}
                       </div>
@@ -1014,7 +1133,9 @@ export default function SailingAnimationBuilder() {
                 </div>
 
                 <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-                  <div className="text-xs font-medium text-slate-700">Project JSON</div>
+                  <div className="text-xs font-medium text-slate-700">
+                    Project JSON
+                  </div>
                   <textarea
                     className="mt-2 h-52 w-full resize-none rounded-lg bg-white p-2 text-xs ring-1 ring-slate-200"
                     value={exportText}
@@ -1022,23 +1143,9 @@ export default function SailingAnimationBuilder() {
                     placeholder="Click Export to generate JSON, or paste JSON here then click Import."
                   />
                 </div>
-
-                <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-                  <div className="text-xs font-medium text-slate-700">Roadmap</div>
-                  <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                    <li>Flag clips editable directly in the dope sheet lanes</li>
-                    <li>Laylines (port/starboard) from selected boat using wind angle</li>
-                    <li>Start sequence timer (5/4/1) synced to timeMs</li>
-                    <li>Magnetic snapping: start line / marks / grid</li>
-                  </ul>
-                </div>
               </div>
             </div>
           </div>
-        </div>
-
-        <div className="mt-4 text-xs text-slate-500">
-          Tip: Flags are overlays. With Option A, a flag shows its default code unless clips override it at the current time.
         </div>
       </div>
     </div>

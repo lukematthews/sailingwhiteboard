@@ -10,3 +10,31 @@
 .steps-lane-slider .ant-slider-handle {
   pointer-events: auto;
 }
+
+/* =========================================
+   SailingWhiteboard Scrubber Hover Effect
+   ========================================= */
+
+/* Base rail */
+.audio-scrubber-slider .ant-slider-rail,
+.audio-scrubber-slider .ant-slider-track {
+  height: 4px;
+  border-radius: 999px;
+  transition: height 120ms ease;
+}
+
+/* Rail grows on hover */
+.audio-scrubber-slider:hover .ant-slider-rail,
+.audio-scrubber-slider:hover .ant-slider-track {
+  height: 8px;
+}
+
+/* Base handle */
+.audio-scrubber-slider .ant-slider-handle {
+  transition: transform 120ms ease;
+}
+
+/* Handle grows on hover */
+.audio-scrubber-slider:hover .ant-slider-handle {
+  transform: scale(1.2);
+}

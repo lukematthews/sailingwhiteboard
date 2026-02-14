@@ -2,6 +2,7 @@ import React from "react";
 import type { Mark, StartLine, Wind } from "../types";
 import { uid } from "../lib/ids";
 import { clamp } from "../lib/math";
+import { DEFAULT_START_LINE } from "../canvas/defaults";
 
 type CoursePanelProps = {
   marks: Mark[];
@@ -77,7 +78,7 @@ export default function CoursePanel({ marks, setMarks, wind, setWind, startLine,
             <button
               className="mt-2 w-full rounded-lg bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
               onClick={() => {
-                setStartLine((s) => ({ ...s, committee: { x: 380, y: 120 }, pin: { x: 660, y: 150 } }));
+                setStartLine((s) => ({ ...s, ...DEFAULT_START_LINE, startBoatId: null }));
               }}
             >
               Reset start line

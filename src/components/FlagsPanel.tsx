@@ -8,7 +8,6 @@ type FlagsPanelProps = {
   flags: Flag[];
   setFlags: React.Dispatch<React.SetStateAction<Flag[]>>;
 
-  // Option A: per-flag lanes of code clips
   flagClipsByFlagId: FlagClipsByFlagId;
   setFlagClipsByFlagId: React.Dispatch<React.SetStateAction<FlagClipsByFlagId>>;
 
@@ -57,7 +56,6 @@ export default function FlagsPanel({
     setFlags((prev) => prev.map((f) => (f.id === selectedFlagId ? { ...f, ...patch } : f)));
   };
 
-  // Option A UX choice:
   // When user changes the *default* flag.code, you may want to ALSO update all existing clips' codes.
   // This makes it feel like "this flag is a P flag" unless you explicitly change clip codes.
   const setDefaultCodeAndMaybeUpdateClips = (code: FlagCode) => {
@@ -290,10 +288,6 @@ export default function FlagsPanel({
             </div>
           </div>
         )}
-      </div>
-
-      <div className="mt-2 text-[11px] text-slate-500">
-        Option A: Each flag has its own lane of clips. No clips means “always show default code”.
       </div>
     </div>
   );
