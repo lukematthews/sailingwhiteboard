@@ -21,7 +21,7 @@ import type {
 import { findClosestStepIndex, frameStepMs, sortSteps } from "./utilSteps";
 import { drawStepBadge } from "./drawStepBadge";
 
-export function useCanvasDraw(args: {
+type Args = {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
   boats: Boat[];
   displayedBoats: Boat[];
@@ -31,14 +31,24 @@ export function useCanvasDraw(args: {
   durationMs: number;
   fps: number;
   selectedBoatId: string | null;
-  marks: Mark[];
+
+  // ✅ wind always drawn
   wind: Wind;
+
+  // ✅ independent visibility controls
+  showMarks: boolean;
+  marks: Mark[];
+
+  showStartLine: boolean;
   startLine: StartLine;
+
   flags: Flag[];
   flagClipsByFlagId: FlagClipsByFlagId;
   selectedFlagId: string | null;
   assetTick: number;
-}) {
+};
+
+export function useCanvasDraw(args: Args) {
   const {
     canvasRef,
     boats,
@@ -49,9 +59,15 @@ export function useCanvasDraw(args: {
     durationMs,
     fps,
     selectedBoatId,
-    marks,
+
     wind,
+
+    showMarks,
+    marks,
+
+    showStartLine,
     startLine,
+
     flags,
     flagClipsByFlagId,
     selectedFlagId,
@@ -80,12 +96,22 @@ export function useCanvasDraw(args: {
 
     drawGrid(ctx, rect.width, rect.height);
 
+    // ------------------------------------------------------------------
     // behind boats
-    drawWind(ctx, wind, { x: 90, y: 70 });
-    drawStartLine(ctx, startLine);
-    for (const m of marks) drawMark(ctx, m);
+    // ------------------------------------------------------------------
 
+    // ✅ always draw wind
+    drawWind(ctx, wind, { x: 90, y: 70 });
+
+    // ✅ independent toggles
+    if (showStartLine) drawStartLine(ctx, startLine);
+    if (showMarks) {
+      for (const m of marks) drawMark(ctx, m);
+    }
+
+    // ------------------------------------------------------------------
     // tracks (under ghosts + boats)
+    // ------------------------------------------------------------------
     ctx.save();
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 6]);
@@ -97,13 +123,17 @@ export function useCanvasDraw(args: {
       if (pts.length < 2) continue;
 
       ctx.beginPath();
-      pts.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+      pts.forEach((pt, i) =>
+        i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y),
+      );
       ctx.strokeStyle = "rgba(0,0,0,0.18)";
       ctx.stroke();
     }
     ctx.restore();
 
+    // ------------------------------------------------------------------
     // ghosts
+    // ------------------------------------------------------------------
     const snappedNow = snapTime(timeMs, fps);
     const frame = frameStepMs(fps);
 
@@ -145,7 +175,9 @@ export function useCanvasDraw(args: {
       }
     }
 
+    // ------------------------------------------------------------------
     // current boats
+    // ------------------------------------------------------------------
     for (const b of displayedBoats) {
       drawBoat(ctx, b);
 
@@ -160,30 +192,31 @@ export function useCanvasDraw(args: {
         ctx.restore();
       }
 
-      if (startLine.startBoatId && b.id === startLine.startBoatId) {
-        ctx.save();
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, 44, 0, Math.PI * 2);
-        ctx.strokeStyle = "rgba(16,185,129,0.35)";
-        ctx.lineWidth = 5;
-        ctx.stroke();
-        ctx.restore();
-      }
+      // ✅ removed “start boat means anything” rendering
+      // (no ring, no startLine.startBoatId usage)
     }
 
+    // ------------------------------------------------------------------
     // flags overlay
+    // ------------------------------------------------------------------
     for (const f of flags) {
       const code = resolveActiveFlagCode(f, flagClipsByFlagId[f.id], timeMs);
       if (!code) continue;
       drawFlag(ctx, f, code, selectedFlagId === f.id);
     }
 
+    // ------------------------------------------------------------------
     // time indicator
+    // ------------------------------------------------------------------
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.7)";
     ctx.font = "12px ui-sans-serif, system-ui";
     ctx.textAlign = "left";
-    ctx.fillText(`t = ${formatTime(timeMs)} / ${formatTime(durationMs)}`, 12, 18);
+    ctx.fillText(
+      `t = ${formatTime(timeMs)} / ${formatTime(durationMs)}`,
+      12,
+      18,
+    );
     ctx.restore();
   }, [
     canvasRef,
@@ -195,8 +228,10 @@ export function useCanvasDraw(args: {
     durationMs,
     fps,
     selectedBoatId,
-    marks,
     wind,
+    showMarks,
+    marks,
+    showStartLine,
     startLine,
     flags,
     flagClipsByFlagId,

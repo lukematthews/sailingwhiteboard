@@ -26,6 +26,14 @@ type Args = {
   timeMs: number;
   fps: number;
 
+  // playback control (pause on interaction to avoid step spam)
+  isPlaying: boolean;
+  setIsPlaying: React.Dispatch<React.SetStateAction<boolean>>;
+
+  // ✅ visibility toggles
+  showMarks: boolean;
+  showStartLine: boolean;
+
   marks: Mark[];
   startLine: StartLine;
   flags: Flag[];
@@ -50,6 +58,13 @@ export function useCanvasInteractions(args: Args) {
     snapToGrid,
     timeMs,
     fps,
+
+    isPlaying,
+    setIsPlaying,
+
+    showMarks,
+    showStartLine,
+
     marks,
     startLine,
     flags,
@@ -69,6 +84,14 @@ export function useCanvasInteractions(args: Args) {
   const timeRef = useRef<number>(timeMs);
   const fpsRef = useRef<number>(fps);
 
+  // playback refs
+  const isPlayingRef = useRef<boolean>(isPlaying);
+  const setIsPlayingRef = useRef(setIsPlaying);
+
+  // visibility refs
+  const showMarksRef = useRef<boolean>(showMarks);
+  const showStartLineRef = useRef<boolean>(showStartLine);
+
   const marksRef = useRef<Mark[]>(marks);
   const startLineRef = useRef<StartLine>(startLine);
   const flagsRef = useRef<Flag[]>(flags);
@@ -80,10 +103,19 @@ export function useCanvasInteractions(args: Args) {
   useEffect(() => void (timeRef.current = timeMs), [timeMs]);
   useEffect(() => void (fpsRef.current = fps), [fps]);
 
+  useEffect(() => void (isPlayingRef.current = isPlaying), [isPlaying]);
+  useEffect(() => void (setIsPlayingRef.current = setIsPlaying), [setIsPlaying]);
+
+  useEffect(() => void (showMarksRef.current = showMarks), [showMarks]);
+  useEffect(() => void (showStartLineRef.current = showStartLine), [showStartLine]);
+
   useEffect(() => void (marksRef.current = marks), [marks]);
   useEffect(() => void (startLineRef.current = startLine), [startLine]);
   useEffect(() => void (flagsRef.current = flags), [flags]);
-  useEffect(() => void (flagClipsRef.current = flagClipsByFlagId), [flagClipsByFlagId]);
+  useEffect(
+    () => void (flagClipsRef.current = flagClipsByFlagId),
+    [flagClipsByFlagId],
+  );
   useEffect(() => void (displayedBoatsRef.current = displayedBoats), [displayedBoats]);
 
   useEffect(() => {
@@ -109,30 +141,57 @@ export function useCanvasInteractions(args: Args) {
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
     };
 
+    const pauseIfPlaying = () => {
+      if (isPlayingRef.current) {
+        setIsPlayingRef.current(false);
+      }
+    };
+
+    const cancelActive = (pointerId?: number) => {
+      active = null;
+      if (pointerId != null) {
+        try {
+          canvas.releasePointerCapture(pointerId);
+        } catch {}
+      }
+    };
+
     const onDown = (e: PointerEvent) => {
       const p = getPoint(e);
 
-      // start line handles
-      const h = hitTestStartHandle(p.x, p.y, startLineRef.current);
-      if (h) {
-        active = { kind: "start", handle: h };
-        setSelectedBoatId(null);
-        setSelectedFlagId(null);
-        try {
-          canvas.setPointerCapture(e.pointerId);
-        } catch {}
-        e.preventDefault();
-        return;
+      // ------------------------------------------------------------
+      // start line handles (ONLY if visible)
+      // ------------------------------------------------------------
+      if (showStartLineRef.current) {
+        const h = hitTestStartHandle(p.x, p.y, startLineRef.current);
+        if (h) {
+          pauseIfPlaying();
+          active = { kind: "start", handle: h };
+          setSelectedBoatId(null);
+          setSelectedFlagId(null);
+          try {
+            canvas.setPointerCapture(e.pointerId);
+          } catch {}
+          e.preventDefault();
+          return;
+        }
       }
 
+      // ------------------------------------------------------------
       // flags (selectable only if visible now)
+      // ------------------------------------------------------------
       const flagsNow = flagsRef.current;
       for (let i = flagsNow.length - 1; i >= 0; i--) {
         const f = flagsNow[i];
-        const codeNow = resolveActiveFlagCode(f, flagClipsRef.current[f.id], timeRef.current);
+        const codeNow = resolveActiveFlagCode(
+          f,
+          flagClipsRef.current[f.id],
+          timeRef.current,
+        );
         if (!codeNow) continue;
 
         if (hitTestFlag(p.x, p.y, f)) {
+          pauseIfPlaying();
           active = {
             kind: "flag",
             flagId: f.id,
@@ -148,27 +207,34 @@ export function useCanvasInteractions(args: Args) {
         }
       }
 
-      // marks
-      const marksNow = marksRef.current;
-      for (let i = marksNow.length - 1; i >= 0; i--) {
-        const m = marksNow[i];
-        if (hitTestMark(p.x, p.y, m)) {
-          active = {
-            kind: "mark",
-            markId: m.id,
-            dragOffset: { x: p.x - m.x, y: p.y - m.y },
-          };
-          setSelectedBoatId(null);
-          setSelectedFlagId(null);
-          try {
-            canvas.setPointerCapture(e.pointerId);
-          } catch {}
-          e.preventDefault();
-          return;
+      // ------------------------------------------------------------
+      // marks (ONLY if visible)
+      // ------------------------------------------------------------
+      if (showMarksRef.current) {
+        const marksNow = marksRef.current;
+        for (let i = marksNow.length - 1; i >= 0; i--) {
+          const m = marksNow[i];
+          if (hitTestMark(p.x, p.y, m)) {
+            pauseIfPlaying();
+            active = {
+              kind: "mark",
+              markId: m.id,
+              dragOffset: { x: p.x - m.x, y: p.y - m.y },
+            };
+            setSelectedBoatId(null);
+            setSelectedFlagId(null);
+            try {
+              canvas.setPointerCapture(e.pointerId);
+            } catch {}
+            e.preventDefault();
+            return;
+          }
         }
       }
 
+      // ------------------------------------------------------------
       // boats
+      // ------------------------------------------------------------
       const boatsNow = displayedBoatsRef.current;
       let hit: Boat | null = null;
       for (let i = boatsNow.length - 1; i >= 0; i--) {
@@ -185,6 +251,8 @@ export function useCanvasInteractions(args: Args) {
         setSelectedFlagId(null);
         return;
       }
+
+      pauseIfPlaying(); // key fix for steps spam
 
       setSelectedBoatId(hit.id);
       setSelectedFlagId(null);
@@ -214,6 +282,17 @@ export function useCanvasInteractions(args: Args) {
 
     const onMove = (e: PointerEvent) => {
       if (!active) return;
+
+      // If visibility toggles changed mid-drag, cancel the interaction.
+      if (active.kind === "mark" && !showMarksRef.current) {
+        cancelActive(e.pointerId);
+        return;
+      }
+      if (active.kind === "start" && !showStartLineRef.current) {
+        cancelActive(e.pointerId);
+        return;
+      }
+
       const p = getPoint(e);
 
       if (active.kind === "start") {
@@ -334,5 +413,20 @@ export function useCanvasInteractions(args: Args) {
       canvas.removeEventListener("pointerup", onUp);
       canvas.removeEventListener("pointercancel", onUp);
     };
-  }, [canvasRef, setFlags, setMarks, setStartLine, setStepsByBoatId, setSelectedBoatId, setSelectedFlagId, autoKey]);
+  }, [
+    canvasRef,
+    setFlags,
+    setMarks,
+    setStartLine,
+    setStepsByBoatId,
+    setSelectedBoatId,
+    setSelectedFlagId,
+    autoKey,
+
+    // keep pauseIfPlaying correct
+    isPlaying,
+    setIsPlaying,
+
+    // NOTE: showMarks/showStartLine are handled via refs; no need here
+  ]);
 }

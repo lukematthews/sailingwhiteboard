@@ -1,6 +1,11 @@
 import * as React from "react";
 import { formatTime } from "../../lib/time";
 
+import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import PauseIcon from "@mui/icons-material/Pause";
+import SkipNextIcon from "@mui/icons-material/SkipNext";
+import SkipPreviousIcon from "@mui/icons-material/SkipPrevious";
+
 export default function AudioScrubberBar(props: {
   timeMs: number;
   durationMs: number;
@@ -39,7 +44,7 @@ export default function AudioScrubberBar(props: {
   const [dragging, setDragging] = React.useState(false);
   const [barWidth, setBarWidth] = React.useState(0);
 
-  // --- sanitize/clamp ---
+  // --- clamp ---
   const safeDuration =
     Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 1;
 
@@ -47,9 +52,10 @@ export default function AudioScrubberBar(props: {
     ? Math.min(safeDuration, Math.max(0, timeMs))
     : 0;
 
-  // --- pixel-based progress so tiny changes are visible ---
+  // --- pixel progress ---
   const progressPx = barWidth > 0 ? (safeTime / safeDuration) * barWidth : 0;
-  const thumbLeftPx = Math.max(0, Math.min(barWidth, progressPx)) - 9; // 18px thumb
+
+  const thumbLeftPx = Math.max(0, Math.min(barWidth, progressPx)) - 8;
 
   const quantize = React.useCallback(
     (vMs: number) => {
@@ -75,15 +81,15 @@ export default function AudioScrubberBar(props: {
     [safeDuration, onScrubTo, quantize],
   );
 
-  // Keep barWidth accurate
+  // ResizeObserver keeps width correct
   React.useLayoutEffect(() => {
     const el = barRef.current;
     if (!el) return;
 
     const update = () => setBarWidth(el.getBoundingClientRect().width);
-    update();
 
-    const ro = new ResizeObserver(() => update());
+    update();
+    const ro = new ResizeObserver(update);
     ro.observe(el);
 
     return () => ro.disconnect();
@@ -109,7 +115,9 @@ export default function AudioScrubberBar(props: {
     <div className="col-span-3 border-b border-slate-800 bg-slate-950">
       <div className="px-3 py-3">
         <div className="rounded-2xl bg-slate-900/80 px-4 py-3 ring-1 ring-white/10">
-          {/* TOP: prominent scrubber */}
+          {/* ===================== */}
+          {/* TOP: SCRUBBER */}
+          {/* ===================== */}
           <div
             className="w-full"
             onMouseEnter={() => setHovered(true)}
@@ -122,66 +130,75 @@ export default function AudioScrubberBar(props: {
               }`}
               style={{ height: 22 }}
               onMouseDown={(e) => {
-                e.preventDefault();
                 setDragging(true);
                 seekFromClientX(e.clientX);
               }}
             >
               {/* Track */}
               <div
-                className={`absolute left-0 right-0 top-1/2 -translate-y-1/2 rounded-full bg-white/20 transition-all duration-150 ${
+                className={`absolute left-0 right-0 top-1/2 -translate-y-1/2 rounded-full bg-white/20 ${
                   hovered || dragging ? "h-3" : "h-2.5"
                 }`}
               />
 
               {/* Progress */}
               <div
-                className={`absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-red-500 transition-all duration-150 ${
+                className={`absolute left-0 top-1/2 -translate-y-1/2 rounded-full bg-red-500 ${
                   hovered || dragging ? "h-3" : "h-2.5"
-                } shadow-[0_0_18px_rgba(239,68,68,0.45)]`}
+                }`}
                 style={{ width: `${progressPx}px` }}
               />
 
               {/* Thumb */}
               <div
-                className={`absolute top-1/2 -translate-y-1/2 rounded-full bg-red-500 ring-2 ring-white shadow-md transition-opacity duration-150 ${
+                className={`absolute top-1/2 -translate-y-1/2 rounded-full bg-red-500 ring-2 ring-white shadow-md ${
                   hovered || dragging ? "opacity-100" : "opacity-0"
                 }`}
                 style={{
-                  width: 18,
-                  height: 18,
+                  width: 16,
+                  height: 16,
                   left: `${thumbLeftPx}px`,
                 }}
               />
             </div>
           </div>
 
-          {/* BOTTOM: controls */}
+          {/* ===================== */}
+          {/* BOTTOM: CONTROLS */}
+          {/* ===================== */}
           <div className="mt-3 flex items-center gap-3">
+            {/* Buttons */}
             <div className="flex items-center gap-2">
-              <IconButton label="Start" onClick={onJumpStart}>
-                ⏮
+              <IconButton label="Back" onClick={onJumpStart}>
+                <SkipPreviousIcon fontSize="medium" />
               </IconButton>
 
               <button
                 onClick={onTogglePlay}
                 type="button"
-                className="h-10 rounded-2xl bg-white px-6 font-semibold text-slate-900 hover:bg-slate-200 active:scale-[0.99]"
+                className="flex h-10 items-center justify-center rounded-2xl bg-white px-5 text-slate-900 hover:bg-slate-200 active:scale-[0.98]"
               >
-                {isPlaying ? "Pause" : "Play"}
+                {isPlaying ? (
+                  <PauseIcon fontSize="medium" />
+                ) : (
+                  <PlayArrowIcon fontSize="medium" />
+                )}
               </button>
 
-              <IconButton label="End" onClick={onJumpEnd}>
-                ⏭
+              <IconButton label="Forward" onClick={onJumpEnd}>
+                <SkipNextIcon fontSize="medium" />
               </IconButton>
             </div>
 
+            {/* Time */}
             <div className="ml-2 text-xs font-medium text-slate-200 tabular-nums">
               {formatTime(safeTime)} <span className="text-slate-500">/</span>{" "}
               {formatTime(safeDuration)}
             </div>
 
+            {/* Right Controls */}
             <div className="ml-auto flex items-center gap-2">
+              {/* Speed */}
               <label className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-xs text-slate-200 ring-1 ring-white/10">
                 <span className="text-slate-400">Speed</span>
                 <select
@@ -198,6 +215,7 @@ export default function AudioScrubberBar(props: {
                 </select>
               </label>
 
+              {/* Ripple */}
               <label className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-xs text-slate-200 ring-1 ring-white/10">
                 <input
                   type="checkbox"
@@ -214,6 +232,10 @@ export default function AudioScrubberBar(props: {
   );
 }
 
+/* ----------------------------- */
+/* Icon Button Wrapper */
+/* ----------------------------- */
+
 function IconButton({
   children,
   onClick,
@@ -228,9 +250,9 @@ function IconButton({
       aria-label={label}
       onClick={onClick}
       type="button"
-      className="h-10 w-10 rounded-xl bg-white/5 text-slate-200 ring-1 ring-white/10 hover:bg-white/10 active:scale-[0.99]"
+      className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 text-slate-200 ring-1 ring-white/10 hover:bg-white/10 active:scale-[0.98]"
     >
-      <span className="text-lg">{children}</span>
+      {children}
     </button>
   );
 }

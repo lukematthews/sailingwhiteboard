@@ -81,6 +81,9 @@ export default function SailingAnimationBuilder() {
     setStepsByBoatId((prev) => ensureStartSteps(boats, prev));
   }, [boats]);
 
+  const [showStartLine, setShowStartLine] = useState(true);
+  const [showMarks, setShowMarks] = useState(true);
+
   // course
   const [marks, setMarks] = useState<Mark[]>(() => DEFAULT_MARKS);
   const [wind, setWind] = useState<Wind>(() => ({ fromDeg: 0, speedKt: 15 }));
@@ -120,44 +123,44 @@ export default function SailingAnimationBuilder() {
   useCanvasDraw({
     canvasRef,
     boats,
+    displayedBoats,
     stepsByBoatId,
     segmentsByBoatId,
     timeMs,
     durationMs,
     fps,
     selectedBoatId,
+    wind, // ✅ always
+    showMarks,
     marks,
-    wind,
+    showStartLine,
     startLine,
     flags,
     flagClipsByFlagId,
     selectedFlagId,
     assetTick,
-    displayedBoats,
   });
-
   // --- pointer interactions (moved to hook; identical behavior) ---
   useCanvasInteractions({
     canvasRef,
     autoKey,
     tool,
     snapToGrid,
-
     timeMs,
     fps,
-
+    showMarks,
+    showStartLine,
     marks,
     startLine,
+    isPlaying,
+    setIsPlaying,
     flags,
     flagClipsByFlagId,
-
     displayedBoats,
-
     setStepsByBoatId,
     setMarks,
     setStartLine,
     setFlags,
-
     setSelectedBoatId,
     setSelectedFlagId,
   });
@@ -343,6 +346,10 @@ export default function SailingAnimationBuilder() {
                 startLine={startLine}
                 setStartLine={setStartLine}
                 boatsOptions={boatsOptions}
+                showMarks={showMarks}
+                setShowMarks={setShowMarks}
+                showStartLine={showStartLine}
+                setShowStartLine={setShowStartLine}
               />
             }
             flags={
