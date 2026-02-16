@@ -1,6 +1,5 @@
 // src/SailingAnimationBuilder.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { clamp } from "./lib/math";
 import { uid } from "./lib/ids";
 
 import StepsDopeSheet from "./components/StepsDopeSheet";
@@ -28,7 +27,6 @@ import {
 import { interpolateBoatsAtTimeFromSteps } from "./animation/stepsInterpolate";
 
 import BuilderHeader from "./builder/BuilderHeader";
-import TimelineSettingsBar from "./builder/TimelineSettingsBar";
 import InspectorPanel from "./builder/InspectorPanel";
 import { ensureStartSteps } from "./builder/ensureStartSteps";
 import { useTimeline } from "./builder/useTimeline";
@@ -36,6 +34,8 @@ import { useProjectIO } from "./builder/useProjectIO";
 import { useCanvasDraw } from "./builder/useCanvasDraw";
 import { useCanvasInteractions } from "./builder/useCanvasInteractions";
 import RightSidebar from "./builder/RightSidebar";
+import TimelinePanel from "./builder/TimelinePanel";
+import AudioScrubberBar from "./components/dopesheet/AudioScrubberBar";
 
 export default function SailingAnimationBuilder() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -266,8 +266,9 @@ export default function SailingAnimationBuilder() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4">
-      <div className="mx-auto max-w-6xl">
+    <div className="h-screen w-screen overflow-hidden bg-slate-100 flex flex-col">
+      {/* HEADER */}
+      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3">
         <BuilderHeader
           tool={tool}
           setTool={setTool}
@@ -277,27 +278,46 @@ export default function SailingAnimationBuilder() {
           onAddBoat={addBoat}
           onDeleteSelectedBoat={deleteSelectedBoat}
         />
+      </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_380px]">
-          <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-            <div
-              ref={wrapRef}
-              className="relative aspect-[16/10] w-full overflow-hidden rounded-xl ring-1 ring-slate-200 touch-none"
-            >
-              <canvas ref={canvasRef} className="h-full w-full touch-none" />
+      {/* MAIN AREA */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* LEFT SIDE (Canvas + Timeline) */}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* CANVAS */}
+          <div className="relative flex-1 bg-white">
+            <div ref={wrapRef} className="absolute inset-0">
+              <canvas ref={canvasRef} className="h-full w-full" />
             </div>
-            <TimelineSettingsBar
-              durationSeconds={Math.round(durationMs / 1000)}
-              fps={fps}
-              onDurationSecondsChange={(s) => {
-                const ms = clamp(s * 1000, 1000, 120000);
-                setDurationMs(ms);
-                setTimeMs((t) => clamp(t, 0, ms));
+          </div>
+          <div>
+            <AudioScrubberBar
+              timeMs={timeMs}
+              durationMs={durationMs}
+              scrubberStep={/* whatever you use, e.g. frameStepMs(fps) */ 50}
+              onScrubTo={(t) => {
+                setIsPlaying(false);
+                setTimeMs(t);
               }}
-              onFpsChange={(nextFps) => setFps(clamp(nextFps, 12, 120))}
+              onJumpStart={() => {
+                setIsPlaying(false);
+                setTimeMs(0);
+              }}
+              onTogglePlay={() => setIsPlaying((p) => !p)}
+              onJumpEnd={() => {
+                setIsPlaying(false);
+                setTimeMs(durationMs);
+              }}
+              isPlaying={isPlaying}
+              playbackRate={playbackRate}
+              setPlaybackRate={setPlaybackRate}
+              ripple={false}
+              setRipple={() => {}}
             />
-
-            <div className="mt-3">
+          </div>
+          {/* TIMELINE AREA */}
+          <div className="shrink-0 border-t border-slate-200 bg-white">
+            <div className="px-4 pb-3">
               <StepsDopeSheet
                 boats={boats}
                 stepsByBoatId={stepsByBoatId}
@@ -319,24 +339,24 @@ export default function SailingAnimationBuilder() {
                 setSelectedFlagId={setSelectedFlagId}
               />
             </div>
-
-            <div className="mt-3 flex items-center justify-end gap-2">
-              <button
-                className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
-                onClick={exportProject}
-              >
-                Export
-              </button>
-              <button
-                className="rounded-xl bg-white px-3 py-2 text-sm shadow-sm ring-1 ring-slate-200 hover:bg-slate-50"
-                onClick={importProject}
-              >
-                Import
-              </button>
-            </div>
           </div>
+        </div>
 
+        {/* RIGHT SIDEBAR */}
+        <div className="w-[380px] shrink-0 border-l border-slate-200 bg-white overflow-y-auto">
           <RightSidebar
+            timeline={
+              <TimelinePanel
+                durationMs={durationMs}
+                setDurationMs={setDurationMs}
+                fps={fps}
+                setFps={setFps}
+                timeMs={timeMs}
+                setTimeMs={setTimeMs}
+                isPlaying={isPlaying}
+                setIsPlaying={setIsPlaying}
+              />
+            }
             course={
               <CoursePanel
                 marks={marks}
@@ -346,10 +366,6 @@ export default function SailingAnimationBuilder() {
                 startLine={startLine}
                 setStartLine={setStartLine}
                 boatsOptions={boatsOptions}
-                showMarks={showMarks}
-                setShowMarks={setShowMarks}
-                showStartLine={showStartLine}
-                setShowStartLine={setShowStartLine}
               />
             }
             flags={

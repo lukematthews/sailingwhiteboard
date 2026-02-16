@@ -12,7 +12,6 @@ import type {
 } from "../types";
 import { upsertStep } from "../animation/steps";
 import { uid } from "../lib/ids";
-import AudioScrubberBar from "./dopesheet/AudioScrubberBar";
 import BoatLaneRow from "./dopesheet/BoatLaneRow";
 import FlagLaneRow from "./dopesheet/FlagLaneRow";
 
@@ -464,22 +463,6 @@ export default function StepsDopeSheet({
     <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
       <div className="rounded-lg bg-white ring-1 ring-slate-200">
         <div className="grid grid-cols-[140px_minmax(0,1fr)_88px] items-start">
-          {/* Scrubber row (audio-style) */}
-          <AudioScrubberBar
-            timeMs={timeMs}
-            durationMs={durationMs}
-            scrubberStep={scrubberStep}
-            onScrubTo={scrubTo}
-            onJumpStart={jumpToStart}
-            onTogglePlay={togglePlay}
-            onJumpEnd={jumpToEnd}
-            isPlaying={isPlaying}
-            playbackRate={playbackRate}
-            setPlaybackRate={setPlaybackRate}
-            ripple={ripple}
-            setRipple={setRipple}
-          />
-
           {/* Boat lanes */}
           {boats.map((boat) => {
             const laneSteps = sortSteps(stepsByBoatId[boat.id] || []);
