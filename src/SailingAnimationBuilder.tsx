@@ -359,13 +359,17 @@ export default function SailingAnimationBuilder() {
             }
             course={
               <CoursePanel
-                marks={marks}
-                setMarks={setMarks}
                 wind={wind}
                 setWind={setWind}
+                showStartLine={showStartLine}
+                setShowStartLine={setShowStartLine}
+                showMarks={showMarks}
+                setShowMarks={setShowMarks}
                 startLine={startLine}
                 setStartLine={setStartLine}
                 boatsOptions={boatsOptions}
+                marks={marks}
+                setMarks={setMarks}
               />
             }
             flags={

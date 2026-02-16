@@ -45,6 +45,8 @@ type Args = {
   flags: Flag[];
   flagClipsByFlagId: FlagClipsByFlagId;
   selectedFlagId: string | null;
+
+  // redraw tick for async-loaded flag SVG assets
   assetTick: number;
 };
 
@@ -71,10 +73,14 @@ export function useCanvasDraw(args: Args) {
     flags,
     flagClipsByFlagId,
     selectedFlagId,
+
     assetTick,
   } = args;
 
   useEffect(() => {
+    // explicitly reference assetTick so it’s obvious why it’s in deps
+    void assetTick;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -92,8 +98,12 @@ export function useCanvasDraw(args: Args) {
       canvas.height = h;
     }
 
+    // Draw in CSS pixels, but with HiDPI backing store.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
+    // ------------------------------------------------------------------
+    // background
+    // ------------------------------------------------------------------
     drawGrid(ctx, rect.width, rect.height);
 
     // ------------------------------------------------------------------
@@ -105,6 +115,7 @@ export function useCanvasDraw(args: Args) {
 
     // ✅ independent toggles
     if (showStartLine) drawStartLine(ctx, startLine);
+
     if (showMarks) {
       for (const m of marks) drawMark(ctx, m);
     }
@@ -115,6 +126,7 @@ export function useCanvasDraw(args: Args) {
     ctx.save();
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 6]);
+
     for (const b of boats) {
       const steps = stepsByBoatId[b.id] || [];
       if (steps.length < 2) continue;
@@ -129,6 +141,7 @@ export function useCanvasDraw(args: Args) {
       ctx.strokeStyle = "rgba(0,0,0,0.18)";
       ctx.stroke();
     }
+
     ctx.restore();
 
     // ------------------------------------------------------------------
@@ -191,9 +204,6 @@ export function useCanvasDraw(args: Args) {
         ctx.stroke();
         ctx.restore();
       }
-
-      // ✅ removed “start boat means anything” rendering
-      // (no ring, no startLine.startBoatId usage)
     }
 
     // ------------------------------------------------------------------
