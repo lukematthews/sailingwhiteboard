@@ -19,6 +19,7 @@ import type {
 } from "../types";
 import { upsertStep } from "../animation/steps";
 import { uid } from "../lib/ids";
+import { FocusedBoatLane } from "./dopesheet/FocusedBoatLane";
 
 type Props = {
   boats: Boat[];
@@ -69,57 +70,65 @@ function snapClampMs(t: number, durationMs: number, fps: number) {
  * - enforces strictly increasing (>= frame) and clamps to duration bounds
  */
 function buildUpdatedLaneTimes(args: {
-  lane: Step[];
-  snappedInteriorSorted: number[];
+  lane: Step[]; // sorted
+  snappedInteriorByIndex: number[]; // length === lane.length, stable by index
   movedInteriorIndex: number | null;
-  oldInterior: number[];
   rippleEnabled: boolean;
   durationMs: number;
   frame: number;
 }): Step[] {
   const {
     lane,
-    snappedInteriorSorted,
+    snappedInteriorByIndex,
     movedInteriorIndex,
-    oldInterior,
     rippleEnabled,
     durationMs,
     frame,
   } = args;
+
   if (lane.length === 0) return lane;
 
-  // Pair by ORDER (stable)
-  let out = lane.map((s, i) => ({
-    ...s,
-    tMs: snappedInteriorSorted[i] ?? s.tMs,
-  }));
+  const old = lane.map((s) => s.tMs);
+  const next = old.slice();
 
+  // Apply the moved handle’s snapped value
+  if (movedInteriorIndex != null) {
+    next[movedInteriorIndex] =
+      snappedInteriorByIndex[movedInteriorIndex] ?? old[movedInteriorIndex];
+  }
+
+  // Ripple = shift everything AFTER the moved index by the same delta,
+  // based on ORIGINAL times (authoritative).
   if (rippleEnabled && movedInteriorIndex != null) {
-    const oldT = oldInterior[movedInteriorIndex] ?? null;
-    const newT = snappedInteriorSorted[movedInteriorIndex] ?? null;
+    const oldT = old[movedInteriorIndex];
+    const newT = next[movedInteriorIndex];
+    const delta = newT - oldT;
 
-    if (oldT != null && newT != null) {
-      const delta = newT - oldT;
-      if (delta !== 0) {
-        out = out.map((s, i) => {
-          if ((lane[i]?.tMs ?? 0) > oldT) {
-            return { ...s, tMs: clamp(s.tMs + delta, 0, durationMs) };
-          }
-          return s;
-        });
+    if (delta !== 0) {
+      for (let i = movedInteriorIndex + 1; i < next.length; i++) {
+        next[i] = clamp(old[i] + delta, 0, durationMs);
       }
     }
   }
 
-  // Enforce strictly increasing by at least 1 frame
-  out = sortSteps(out);
-  for (let i = 1; i < out.length; i++) {
-    if (out[i].tMs <= out[i - 1].tMs) out[i].tMs = out[i - 1].tMs + frame;
+  // Enforce monotonic increasing by frame (forward pass)
+  for (let i = 0; i < next.length; i++) {
+    const minT = i === 0 ? 0 : next[i - 1] + frame;
+    if (next[i] < minT) next[i] = minT;
   }
 
-  // Cap after enforcing
-  out = out.map((s) => ({ ...s, tMs: clamp(s.tMs, 0, durationMs) }));
-  return out;
+  // Enforce that we can still fit before duration (backward pass)
+  for (let i = next.length - 1; i >= 0; i--) {
+    const maxT = i === next.length - 1 ? durationMs : next[i + 1] - frame;
+    if (next[i] > maxT) next[i] = maxT;
+  }
+
+  // Clamp again just to be safe
+  for (let i = 0; i < next.length; i++) {
+    next[i] = clamp(next[i], 0, durationMs);
+  }
+
+  return lane.map((s, i) => ({ ...s, tMs: next[i] }));
 }
 
 /**
@@ -309,42 +318,43 @@ export default function StepsDopeSheet({
       const raw = Array.isArray(newValsAny) ? newValsAny.slice() : [newValsAny];
       if (raw.length < 2) return;
 
-      // Force endpoints even if AntD tries to move them
       raw[0] = 0;
       raw[raw.length - 1] = durationMs;
 
-      // Snap/clamp and sort (defensive)
-      const snapped = raw
-        .map((t) => snapClamp(t, durationMs, fps))
-        .slice()
-        .sort((a, b) => a - b);
+      const lane = sortSteps(stepsByBoatId[boatId] || []);
+      if (lane.length === 0) return;
 
-      snapped[0] = 0;
-      snapped[snapped.length - 1] = durationMs;
-
-      const snappedInterior = snapped.slice(1, -1);
-
-      // Determine which handle moved most (FULL array includes ends)
       const prevFull = prevLaneValuesRef.current[boatId] || [];
-      prevLaneValuesRef.current[boatId] = snapped.slice();
+      const snappedFull = raw.map((t) => snapClamp(t, durationMs, fps));
 
-      const bestI = mostMovedHandleIndex(prevFull, snapped);
+      // figure out which handle moved
+      const bestI = mostMovedHandleIndex(prevFull, snappedFull);
+      prevLaneValuesRef.current[boatId] = snappedFull.slice();
 
-      // Ignore attempts to move endpoints
-      if (bestI === 0 || bestI === snapped.length - 1) return;
+      if (bestI === 0 || bestI === snappedFull.length - 1) return;
 
-      // Map to interior index
       const movedInteriorIndex = bestI - 1;
 
-      const lane = sortSteps(stepsByBoatId[boatId] || []);
-      const oldInterior = lane.map((s) => s.tMs);
+      const interior = snappedFull.slice(1, -1);
+
+      // 🚫 PREVENT CROSSING MANUALLY
+      for (let i = 0; i < interior.length; i++) {
+        const minT = i === 0 ? 0 : interior[i - 1] + frame;
+        const maxT =
+          i === interior.length - 1 ? durationMs : interior[i + 1] - frame;
+
+        interior[i] = clamp(interior[i], minT, maxT);
+      }
 
       const movedStep = lane[movedInteriorIndex];
       if (movedStep) {
         setViewKind("boat");
         setSelectedBoatId(boatId);
         setSelectedFlagId(null);
-        setSelectedStepIdByBoatId((p) => ({ ...p, [boatId]: movedStep.id }));
+        setSelectedStepIdByBoatId((p) => ({
+          ...p,
+          [boatId]: movedStep.id,
+        }));
       }
 
       setIsPlaying(false);
@@ -353,15 +363,40 @@ export default function StepsDopeSheet({
         const lanePrev = sortSteps(prev[boatId] || []);
         if (lanePrev.length === 0) return prev;
 
-        const nextLane = buildUpdatedLaneTimes({
-          lane: lanePrev,
-          snappedInteriorSorted: snappedInterior,
-          movedInteriorIndex,
-          oldInterior,
-          rippleEnabled: ripple,
-          durationMs,
-          frame,
-        });
+        const oldTimes = lanePrev.map((s) => s.tMs);
+        const nextTimes = oldTimes.slice();
+
+        const oldT = oldTimes[movedInteriorIndex];
+        const newT = interior[movedInteriorIndex];
+        const delta = newT - oldT;
+
+        nextTimes[movedInteriorIndex] = newT;
+
+        // ✅ ripple using ORIGINAL times
+        if (ripple && delta !== 0) {
+          for (let i = movedInteriorIndex + 1; i < nextTimes.length; i++) {
+            nextTimes[i] = clamp(oldTimes[i] + delta, 0, durationMs);
+          }
+        }
+
+        // enforce monotonic forward
+        for (let i = 1; i < nextTimes.length; i++) {
+          if (nextTimes[i] <= nextTimes[i - 1]) {
+            nextTimes[i] = nextTimes[i - 1] + frame;
+          }
+        }
+
+        // enforce backward
+        for (let i = nextTimes.length - 2; i >= 0; i--) {
+          if (nextTimes[i] >= nextTimes[i + 1]) {
+            nextTimes[i] = nextTimes[i + 1] - frame;
+          }
+        }
+
+        const nextLane = lanePrev.map((s, i) => ({
+          ...s,
+          tMs: clamp(nextTimes[i], 0, durationMs),
+        }));
 
         return { ...prev, [boatId]: nextLane };
       });
@@ -377,6 +412,39 @@ export default function StepsDopeSheet({
       setIsPlaying,
       setStepsByBoatId,
     ],
+  );
+
+  const moveStep = useCallback(
+    (boatId: string, stepId: string, newTimeMs: number) => {
+      setIsPlaying(false);
+
+      setStepsByBoatId((prev) => {
+        const lane = sortSteps(prev[boatId] || []);
+        const idx = lane.findIndex((s) => s.id === stepId);
+        if (idx === -1) return prev;
+
+        const oldT = lane[idx].tMs;
+        const delta = newTimeMs - oldT;
+
+        // apply moved time
+        const next = lane.map((s, i) => {
+          if (i === idx) return { ...s, tMs: newTimeMs };
+          if (ripple && i > idx)
+            return { ...s, tMs: clamp(s.tMs + delta, 0, durationMs) };
+          return s;
+        });
+
+        // enforce increasing by >= frame
+        const frame = stepMs;
+        const sorted = sortSteps(next);
+        for (let i = 1; i < sorted.length; i++) {
+          if (sorted[i].tMs <= sorted[i - 1].tMs)
+            sorted[i].tMs = sorted[i - 1].tMs + frame;
+        }
+        return { ...prev, [boatId]: sorted };
+      });
+    },
+    [durationMs, ripple, setIsPlaying, setStepsByBoatId, stepMs],
   );
 
   // ----------------------------
@@ -491,6 +559,49 @@ export default function StepsDopeSheet({
       setSelectedFlagId,
       setSelectedBoatId,
     ],
+  );
+
+  const updateStepTime = useCallback(
+    (boatId: string, stepId: string, newTimeMs: number) => {
+      const t = snapClamp(newTimeMs, durationMs, fps);
+
+      setIsPlaying(false);
+
+      setStepsByBoatId((prev) => {
+        const lane = sortSteps(prev[boatId] || []);
+        if (!lane.length) return prev;
+
+        const idx = lane.findIndex((s) => s.id === stepId);
+        if (idx === -1) return prev;
+
+        const oldT = lane[idx].tMs;
+        const delta = t - oldT;
+
+        // apply move
+        let next = lane.map((s) => (s.id === stepId ? { ...s, tMs: t } : s));
+
+        // ripple (shift steps after the moved step)
+        if (ripple && delta !== 0) {
+          next = next.map((s) => {
+            if (s.id === stepId) return s;
+            if (s.tMs > oldT)
+              return { ...s, tMs: clamp(s.tMs + delta, 0, durationMs) };
+            return s;
+          });
+        }
+
+        // enforce strictly increasing by >= frame
+        next = sortSteps(next);
+        for (let i = 1; i < next.length; i++) {
+          if (next[i].tMs <= next[i - 1].tMs)
+            next[i].tMs = next[i - 1].tMs + frame;
+        }
+        next = next.map((s) => ({ ...s, tMs: clamp(s.tMs, 0, durationMs) }));
+
+        return { ...prev, [boatId]: next };
+      });
+    },
+    [durationMs, fps, ripple, frame, setStepsByBoatId, setIsPlaying],
   );
 
   // ----------------------------
@@ -710,15 +821,15 @@ export default function StepsDopeSheet({
                   fps={fps}
                   durationMs={durationMs}
                   stepMs={stepMs}
-                  sliderValues={focusedBoatSliderValues}
-                  onLaneSliderChange={(v) =>
-                    updateFromLaneSlider(selectedBoatId, v)
-                  }
+                  ripple={ripple}
                   onSelectStep={(stepId) => selectStep(selectedBoatId, stepId)}
                   onDeleteStep={(stepId) =>
                     deleteStepById(selectedBoatId, stepId)
                   }
-                  onScrubTo={scrubTo}
+                  onMoveStep={(stepId, newTimeMs) => {
+                    // move the step to a new time (the StepTrack drives this)
+                    updateStepTime(selectedBoatId, stepId, newTimeMs);
+                  }}
                 />
               )
             ) : !selectedFlagId ? (
@@ -748,113 +859,6 @@ export default function StepsDopeSheet({
             <span className="tabular-nums">{formatTime(durationMs)}</span>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function FocusedBoatLane(props: {
-  laneSteps: Step[];
-  selectedStepId: string | null;
-
-  timeMs: number;
-  fps: number;
-  durationMs: number;
-  stepMs: number;
-
-  sliderValues: number[];
-  onLaneSliderChange: (v: number | number[]) => void;
-
-  onSelectStep: (stepId: string) => void;
-  onDeleteStep: (stepId: string) => void;
-
-  onScrubTo: (t: number) => void;
-}) {
-  const {
-    laneSteps,
-    selectedStepId,
-    timeMs,
-    fps,
-    durationMs,
-    stepMs,
-    sliderValues,
-    onLaneSliderChange,
-    onSelectStep,
-    onDeleteStep,
-  } = props;
-
-  return (
-    <div className="min-w-0">
-      <div className="min-w-0 overflow-x-auto whitespace-nowrap pb-2">
-        <div className="inline-flex items-center gap-1">
-          {laneSteps.length === 0 ? (
-            <div className="text-[11px] text-slate-500">No steps yet</div>
-          ) : (
-            laneSteps.map((s, i) => {
-              const isSelected = s.id === selectedStepId;
-              const isAtPlayhead = Math.abs(s.tMs - snapTime(timeMs, fps)) < 1;
-
-              return (
-                <div
-                  key={s.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onSelectStep(s.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onSelectStep(s.id);
-                    }
-                  }}
-                  className={`group relative shrink-0 cursor-pointer select-none rounded-md px-2 py-1 text-[11px] ring-1 ${
-                    isSelected
-                      ? "bg-slate-900 text-white ring-slate-900"
-                      : isAtPlayhead
-                        ? "bg-emerald-50 text-emerald-900 ring-emerald-200 hover:bg-emerald-100"
-                        : "bg-slate-50 text-slate-800 ring-slate-200 hover:bg-slate-100"
-                  }`}
-                  title={`Step ${i + 1} @ ${formatTime(s.tMs)}`}
-                >
-                  {i + 1}
-                  <span className="ml-1 text-[10px] opacity-60">
-                    {formatTime(s.tMs)}
-                  </span>
-
-                  <button
-                    className={`absolute -right-1 -top-1 h-4 w-4 items-center justify-center rounded bg-white text-[10px] text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 ${
-                      isSelected ? "flex" : "hidden"
-                    } group-hover:flex`}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      onDeleteStep(s.id);
-                    }}
-                    title="Delete step"
-                    type="button"
-                  >
-                    ×
-                  </button>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      <div className="min-w-0">
-        <Slider
-          className="steps-lane-slider w-full"
-          style={{ width: "100%", maxWidth: "none" }}
-          range
-          min={0}
-          max={Math.max(1, durationMs)}
-          step={stepMs}
-          value={sliderValues}
-          onChange={(v) => onLaneSliderChange(v as any)}
-          onChangeComplete={(v) => onLaneSliderChange(v as any)}
-          tooltip={{
-            formatter: (v) => (typeof v === "number" ? formatTime(v) : ""),
-          }}
-        />
       </div>
     </div>
   );
