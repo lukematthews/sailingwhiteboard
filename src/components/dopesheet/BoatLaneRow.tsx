@@ -67,13 +67,22 @@ export default function BoatLaneRow(props: {
               ) : (
                 laneSteps.map((s, i) => {
                   const isSelected = s.id === selectedStepId;
-                  const isAtPlayhead = Math.abs(s.tMs - snapTime(timeMs, fps)) < 1;
+                  const isAtPlayhead =
+                    Math.abs(s.tMs - snapTime(timeMs, fps)) < 1;
 
                   return (
-                    <button
+                    <div
                       key={s.id}
+                      role="button"
+                      tabIndex={0}
                       onClick={() => onSelectStep(boat.id, s.id)}
-                      className={`group relative shrink-0 rounded-md px-2 py-1 text-[11px] ring-1 ${
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          onSelectStep(boat.id, s.id);
+                        }
+                      }}
+                      className={`group relative shrink-0 rounded-md px-2 py-1 text-[11px] ring-1 cursor-pointer select-none ${
                         isSelected
                           ? "bg-slate-900 text-white ring-slate-900"
                           : isAtPlayhead
@@ -81,13 +90,14 @@ export default function BoatLaneRow(props: {
                             : "bg-slate-50 text-slate-800 ring-slate-200 hover:bg-slate-100"
                       }`}
                       title={`Step ${i + 1} @ ${formatTime(s.tMs)}`}
-                      type="button"
                     >
                       {i + 1}
-                      <span className="ml-1 text-[10px] opacity-60">{formatTime(s.tMs)}</span>
+                      <span className="ml-1 text-[10px] opacity-60">
+                        {formatTime(s.tMs)}
+                      </span>
 
                       <button
-                        className="absolute -right-1 -top-1 hidden h-4 w-4 items-center justify-center rounded bg-white text-[10px] text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 group-hover:flex"
+                        className={`absolute -right-1 -top-1 h-4 w-4 items-center justify-center rounded bg-white text-[10px] text-slate-700 ring-1 ring-slate-200 hover:bg-slate-50 ${isSelected ? "flex" : "hidden"} group-hover:flex`}
                         onClick={(ev) => {
                           ev.stopPropagation();
                           onDeleteStep(boat.id, s.id);
@@ -97,7 +107,7 @@ export default function BoatLaneRow(props: {
                       >
                         ×
                       </button>
-                    </button>
+                    </div>
                   );
                 })
               )}
@@ -115,7 +125,10 @@ export default function BoatLaneRow(props: {
                 value={sliderValues}
                 onChange={(v) => onLaneSliderChange(boat.id, v as any)}
                 onChangeComplete={(v) => onLaneSliderChange(boat.id, v as any)}
-                tooltip={{ formatter: (v) => (typeof v === "number" ? formatTime(v) : "") }}
+                tooltip={{
+                  formatter: (v) =>
+                    typeof v === "number" ? formatTime(v) : "",
+                }}
               />
             </div>
           </div>

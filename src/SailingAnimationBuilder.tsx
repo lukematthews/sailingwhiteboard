@@ -305,10 +305,7 @@ export default function SailingAnimationBuilder() {
                 fps={fps}
                 selectedBoatId={selectedBoatId}
                 setSelectedBoatId={setSelectedBoatId}
-                setTimeMs={(t: number) => {
-                  setIsPlaying(false);
-                  setTimeMs(t);
-                }}
+                setTimeMs={setTimeMs}
                 setIsPlaying={setIsPlaying}
                 isPlaying={isPlaying}
                 onPlaybackRateChange={(r) => setPlaybackRate(r)}

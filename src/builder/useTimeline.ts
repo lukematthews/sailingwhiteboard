@@ -1,69 +1,58 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { clamp } from "../lib/math";
-
-export const DEFAULT_DURATION_MS = 12000;
-export const DEFAULT_FPS = 60;
+// src/builder/useTimeline.ts
+import { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
 export function useTimeline() {
-  const [durationMs, setDurationMs] = useState<number>(DEFAULT_DURATION_MS);
-  const [fps, setFps] = useState<number>(DEFAULT_FPS);
-  const [timeMs, setTimeMs] = useState<number>(0);
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [playbackRate, setPlaybackRate] = useState<number>(1);
+  const [durationMs, setDurationMs] = useState(60000);
+  const [fps, setFps] = useState(60);
 
-  const playbackRateRef = useRef(playbackRate);
-  useEffect(() => void (playbackRateRef.current = playbackRate), [playbackRate]);
+  const [timeMs, setTimeMs] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
 
-  // animation loop
+  const [playbackRate, setPlaybackRate] = useState(1);
+
+  const rafRef = useRef<number | null>(null);
+  const lastRef = useRef<number>(0);
+
   useEffect(() => {
     if (!isPlaying) return;
 
-    let raf = 0;
-    let last = performance.now();
-
     const tick = (now: number) => {
-      const dt = now - last;
-      last = now;
+      if (!lastRef.current) lastRef.current = now;
 
-      const rate = playbackRateRef.current || 1;
+      const dt = now - lastRef.current;
+      lastRef.current = now;
 
-      setTimeMs((t) => {
-        const next = t + dt * rate;
-        if (next >= durationMs) {
-          setIsPlaying(false);
-          return durationMs;
-        }
-        return next;
+      // Force a DOM commit each frame (prevents “updates only when stopped”)
+      flushSync(() => {
+        setTimeMs((prev) => {
+          const next = prev + dt * playbackRate;
+          return Math.min(durationMs, next);
+        });
       });
 
-      raf = requestAnimationFrame(tick);
+      rafRef.current = requestAnimationFrame(tick);
     };
 
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [isPlaying, durationMs]);
+    rafRef.current = requestAnimationFrame(tick);
 
-  const stop = useCallback(() => setIsPlaying(false), []);
-  const togglePlay = useCallback(() => setIsPlaying((p) => !p), []);
-  const jumpToStart = useCallback(() => {
-    setIsPlaying(false);
-    setTimeMs(0);
-  }, []);
-  const jumpToEnd = useCallback(() => {
-    setIsPlaying(false);
-    setTimeMs(durationMs);
-  }, [durationMs]);
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+      lastRef.current = 0;
+    };
+  }, [isPlaying, playbackRate, durationMs]);
 
-  const setDurationSeconds = useCallback((s: number) => {
-    const ms = clamp(s * 1000, 1000, 120000);
-    setDurationMs(ms);
-    setTimeMs((t) => clamp(t, 0, ms));
-  }, []);
+  // Auto-stop at end (keep this)
+  useEffect(() => {
+    if (timeMs >= durationMs && isPlaying) {
+      setIsPlaying(false);
+    }
+  }, [timeMs, durationMs, isPlaying]);
 
   return {
     durationMs,
     setDurationMs,
-    setDurationSeconds,
     fps,
     setFps,
     timeMs,
@@ -72,9 +61,5 @@ export function useTimeline() {
     setIsPlaying,
     playbackRate,
     setPlaybackRate,
-    stop,
-    togglePlay,
-    jumpToStart,
-    jumpToEnd,
   };
 }
