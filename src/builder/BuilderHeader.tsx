@@ -30,7 +30,7 @@ export default function BuilderHeader({
           Sailing Whiteboard
         </h1>
         <p className="text-sm text-slate-600">
-          Show them what happened out there!
+          Drag boats. Add steps. Press play.
         </p>
       </div>
 

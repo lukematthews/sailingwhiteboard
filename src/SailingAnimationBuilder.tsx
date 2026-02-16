@@ -35,6 +35,7 @@ import { useTimeline } from "./builder/useTimeline";
 import { useProjectIO } from "./builder/useProjectIO";
 import { useCanvasDraw } from "./builder/useCanvasDraw";
 import { useCanvasInteractions } from "./builder/useCanvasInteractions";
+import RightSidebar from "./builder/RightSidebar";
 
 export default function SailingAnimationBuilder() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -335,41 +336,46 @@ export default function SailingAnimationBuilder() {
             </div>
           </div>
 
-          <div className="space-y-4">
-            <CoursePanel
-              marks={marks}
-              setMarks={setMarks}
-              wind={wind}
-              setWind={setWind}
-              startLine={startLine}
-              setStartLine={setStartLine}
-              boatsOptions={boatsOptions}
-            />
-
-            <FlagsPanel
-              flags={flags}
-              setFlags={setFlags}
-              flagClipsByFlagId={flagClipsByFlagId}
-              setFlagClipsByFlagId={setFlagClipsByFlagId}
-              selectedFlagId={selectedFlagId}
-              setSelectedFlagId={setSelectedFlagId}
-              timeMs={timeMs}
-              durationMs={durationMs}
-            />
-            <InspectorPanel
-              selectedBoatId={selectedBoatId}
-              selectedBoat={selectedBoat}
-              onUpdateSelectedBoat={updateSelectedBoat}
-              displayedForInspector={displayedForInspector}
-              stepsCountForSelectedBoat={
-                selectedBoatId
-                  ? (stepsByBoatId[selectedBoatId] || []).length
-                  : 0
-              }
-              exportText={exportText}
-              setExportText={setExportText}
-            />
-          </div>
+          <RightSidebar
+            course={
+              <CoursePanel
+                marks={marks}
+                setMarks={setMarks}
+                wind={wind}
+                setWind={setWind}
+                startLine={startLine}
+                setStartLine={setStartLine}
+                boatsOptions={boatsOptions}
+              />
+            }
+            flags={
+              <FlagsPanel
+                flags={flags}
+                setFlags={setFlags}
+                flagClipsByFlagId={flagClipsByFlagId}
+                setFlagClipsByFlagId={setFlagClipsByFlagId}
+                selectedFlagId={selectedFlagId}
+                setSelectedFlagId={setSelectedFlagId}
+                timeMs={timeMs}
+                durationMs={durationMs}
+              />
+            }
+            inspector={
+              <InspectorPanel
+                selectedBoatId={selectedBoatId}
+                selectedBoat={selectedBoat}
+                onUpdateSelectedBoat={updateSelectedBoat}
+                displayedForInspector={displayedForInspector}
+                stepsCountForSelectedBoat={
+                  selectedBoatId
+                    ? (stepsByBoatId[selectedBoatId] || []).length
+                    : 0
+                }
+                exportText={exportText}
+                setExportText={setExportText}
+              />
+            }
+          />
         </div>
       </div>
     </div>
