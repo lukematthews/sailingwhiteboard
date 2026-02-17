@@ -20,7 +20,8 @@ export const SCENARIO_KEYS: ScenarioKey[] = [
 export function getScenarioProjectFile(key: ScenarioKey): ProjectFile {
   switch (key) {
     case "start-sequence":
-      return scenarioStartSequence();
+      return scenarioFiveBoatStartRack();
+    // return scenarioStartSequence();
     case "boat-interaction":
       return scenarioBoatInteraction();
     case "protest-replay":
@@ -117,13 +118,13 @@ function scenarioBlank(): ProjectFile {
 }
 
 function scenarioFiveBoatStartRack(): ProjectFile {
-  // 60 seconds, “last minute” rack-up feel
-  const durationMs = 60000;
+  const durationMs = 120000;
   const fps = 10;
 
-  // Start line (wider, lower-third)
-  const committee = { x: 320, y: 360 };
-  const pin = { x: 540, y: 360 };
+  // ✅ Start line: higher + ~double length, swapped ends (pin left, committee right)
+  const yLine = 240; // higher on canvas
+  const pin = { x: 80, y: yLine };
+  const committee = { x: 880, y: yLine };
 
   // Boats
   const b1 = uid();
@@ -132,128 +133,136 @@ function scenarioFiveBoatStartRack(): ProjectFile {
   const b4 = uid();
   const b5 = uid();
 
-  // Flags: Orange (committee boat), Class flag, then P below
-  // (Using codes as simple strings that your flag renderer supports.)
+  // Flags
   const orange = uid();
   const classFlag = uid();
   const prepP = uid();
+
+  // Timing: scaled “sequence” inside 0..60s, then sail 60..80s upwind
+  const START_MS = 60000;
+  const SAIL_UPCOURSE_END_MS = 80000;
+
+  const CLASS_UP_MS = 10000;
+  const CLASS_DOWN_MS = 60000;
+  const P_UP_MS = 20000;
+  const P_DOWN_MS = 50000;
+
+  const CLASS_CODE = "U" as any; // <-- replace with your actual class flag code if needed
+
+  // Helpers for “45° starboard tack” after start:
+  // y decreases (up the screen), x increases (to the right) with similar magnitude.
+  const upwindDx = -140;
+  const upwindDy = 140;
+
+  // Rack/stage y just below the line (line is at y=240)
+  const rackY = 275;
+  const preStartY = 305;
+
+  // Give each boat its own "slot" along the line to reduce collisions.
+  const slotXs = [220, 360, 500, 640, 780];
 
   return {
     ...baseProject(),
     durationMs,
     fps,
-    marks: [], // keep it clean: start sequence focus
+    marks: [],
     wind: { fromDeg: 0, speedKt: 15 },
     startLine: { committee, pin, startBoatId: null },
 
     flags: [
       { id: orange, code: "O", x: 90, y: 120 },
-      { id: classFlag, code: "1", x: 90, y: 160 },
+      { id: classFlag, code: CLASS_CODE, x: 90, y: 160 },
       { id: prepP, code: "P", x: 90, y: 200 },
     ],
 
-    // Show them all throughout the minute so it reads instantly.
+    // ✅ Clips per your spec
     flagClipsByFlagId: {
-      [orange]: [{ id: uid(), startMs: 0, endMs: durationMs, code: "O" }],
+      [orange]: [{ id: uid(), startMs: 0, endMs: durationMs, code: "orange" }],
       [classFlag]: [
-        { id: uid(), startMs: 0, endMs: durationMs, code: "1" },
+        { id: uid(), startMs: CLASS_UP_MS, endMs: CLASS_DOWN_MS, code: CLASS_CODE },
       ],
-      [prepP]: [{ id: uid(), startMs: 0, endMs: durationMs, code: "P" }],
+      [prepP]: [
+        { id: uid(), startMs: P_UP_MS, endMs: P_DOWN_MS, code: "P" },
+      ],
     },
 
+    // Start boats off-screen-ish so they “arrive”
     boats: [
-      {
-        id: b1,
-        label: "Boat 1",
-        color: "#22c55e",
-        x: 120,
-        y: 420,
-        headingDeg: 0,
-      },
-      {
-        id: b2,
-        label: "Boat 2",
-        color: "#3b82f6",
-        x: 680,
-        y: 410,
-        headingDeg: 0,
-      },
-      {
-        id: b3,
-        label: "Boat 3",
-        color: "#ef4444",
-        x: 420,
-        y: 520,
-        headingDeg: 0,
-      },
-      {
-        id: b4,
-        label: "Boat 4",
-        color: "#f59e0b",
-        x: 40,
-        y: 280,
-        headingDeg: 90,
-      },
-      {
-        id: b5,
-        label: "Boat 5",
-        color: "#a855f7",
-        x: 760,
-        y: 300,
-        headingDeg: 270,
-      },
+      { id: b1, label: "Boat 1", color: "#22c55e", x: -140, y: 520, headingDeg: 0 },
+      { id: b2, label: "Boat 2", color: "#3b82f6", x: 1100, y: 520, headingDeg: 0 },
+      { id: b3, label: "Boat 3", color: "#ef4444", x: 500, y: 820, headingDeg: 0 },
+      { id: b4, label: "Boat 4", color: "#f59e0b", x: -220, y: 120, headingDeg: 90 },
+      { id: b5, label: "Boat 5", color: "#a855f7", x: 1180, y: 120, headingDeg: 270 },
     ],
 
     stepsByBoatId: {
-      // Idea:
-      // - first ~20s: boats enter the scene
-      // - 20-50s: converge toward the line, slowing + “racking”
-      // - 50-60s: tiny forward/back adjustments right under the line
-      // - at 60s: pop just over (or right on) the line
-
       [b1]: [
-        { id: uid(), tMs: 0, x: -60, y: 440, headingMode: "auto" },
-        { id: uid(), tMs: 15000, x: 140, y: 410, headingMode: "auto" },
-        { id: uid(), tMs: 35000, x: 260, y: 392, headingMode: "auto" },
-        { id: uid(), tMs: 50000, x: 300, y: 378, headingMode: "auto" },
-        { id: uid(), tMs: 55000, x: 295, y: 382, headingMode: "auto" }, // rack back
-        { id: uid(), tMs: 60000, x: 305, y: 352, headingMode: "auto" }, // go!
+        // enter + converge + rack into slot 1
+        { id: uid(), tMs: 0, x: -140, y: 520, headingMode: "auto" },
+        { id: uid(), tMs: 20000, x: 140, y: 440, headingMode: "auto" },
+        { id: uid(), tMs: 42000, x: slotXs[0] - 10, y: preStartY + 20, headingMode: "auto" },
+        { id: uid(), tMs: 52000, x: slotXs[0], y: rackY + 18, headingMode: "auto" },
+        { id: uid(), tMs: 56000, x: slotXs[0] - 8, y: rackY + 26, headingMode: "auto" }, // rack back
+        { id: uid(), tMs: 59000, x: slotXs[0] + 6, y: rackY + 20, headingMode: "auto" }, // creep
+        // ✅ start at 60s: pop to/over line
+        { id: uid(), tMs: START_MS, x: slotXs[0], y: yLine - 6, headingMode: "auto" },
+        // ✅ sail upwind 20s on starboard tack (~45°): dx ≈ -dy
+        { id: uid(), tMs: SAIL_UPCOURSE_END_MS, x: slotXs[0] + upwindDx, y: (yLine - 6) - upwindDy, headingMode: "auto" },
+        // keep going
+        { id: uid(), tMs: 100000, x: slotXs[0] + upwindDx - 120, y: (yLine - 6) - upwindDy - 120, headingMode: "auto" },
+        { id: uid(), tMs: 120000, x: slotXs[0] + upwindDx - 220, y: (yLine - 6) - upwindDy - 220, headingMode: "auto" },
       ],
 
       [b2]: [
-        { id: uid(), tMs: 0, x: 900, y: 430, headingMode: "auto" },
-        { id: uid(), tMs: 15000, x: 640, y: 405, headingMode: "auto" },
-        { id: uid(), tMs: 35000, x: 540, y: 390, headingMode: "auto" },
-        { id: uid(), tMs: 50000, x: 510, y: 376, headingMode: "auto" },
-        { id: uid(), tMs: 56000, x: 515, y: 382, headingMode: "auto" }, // rack back
-        { id: uid(), tMs: 60000, x: 505, y: 350, headingMode: "auto" },
+        { id: uid(), tMs: 0, x: 1100, y: 520, headingMode: "auto" },
+        { id: uid(), tMs: 20000, x: 860, y: 440, headingMode: "auto" },
+        { id: uid(), tMs: 42000, x: slotXs[4] + 10, y: preStartY + 22, headingMode: "auto" },
+        { id: uid(), tMs: 52000, x: slotXs[4], y: rackY + 16, headingMode: "auto" },
+        { id: uid(), tMs: 56000, x: slotXs[4] + 10, y: rackY + 24, headingMode: "auto" },
+        { id: uid(), tMs: 59000, x: slotXs[4] - 8, y: rackY + 18, headingMode: "auto" },
+        { id: uid(), tMs: START_MS, x: slotXs[4], y: yLine - 6, headingMode: "auto" },
+        { id: uid(), tMs: SAIL_UPCOURSE_END_MS, x: slotXs[4] + upwindDx, y: (yLine - 6) - upwindDy, headingMode: "auto" },
+        { id: uid(), tMs: 100000, x: slotXs[4] + upwindDx - 120, y: (yLine - 6) - upwindDy - 120, headingMode: "auto" },
+        { id: uid(), tMs: 120000, x: slotXs[4] + upwindDx - 220, y: (yLine - 6) - upwindDy - 220, headingMode: "auto" },
       ],
 
       [b3]: [
-        { id: uid(), tMs: 0, x: 420, y: 650, headingMode: "auto" },
-        { id: uid(), tMs: 12000, x: 420, y: 500, headingMode: "auto" },
-        { id: uid(), tMs: 30000, x: 420, y: 415, headingMode: "auto" },
-        { id: uid(), tMs: 47000, x: 420, y: 385, headingMode: "auto" },
-        { id: uid(), tMs: 54000, x: 430, y: 390, headingMode: "auto" }, // slide right a touch
-        { id: uid(), tMs: 60000, x: 425, y: 352, headingMode: "auto" },
+        { id: uid(), tMs: 0, x: 500, y: 820, headingMode: "auto" },
+        { id: uid(), tMs: 18000, x: 500, y: 620, headingMode: "auto" },
+        { id: uid(), tMs: 42000, x: slotXs[2], y: preStartY + 28, headingMode: "auto" },
+        { id: uid(), tMs: 52000, x: slotXs[2], y: rackY + 20, headingMode: "auto" },
+        { id: uid(), tMs: 56000, x: slotXs[2] + 12, y: rackY + 28, headingMode: "auto" }, // lateral rack
+        { id: uid(), tMs: 59000, x: slotXs[2] - 10, y: rackY + 22, headingMode: "auto" },
+        { id: uid(), tMs: START_MS, x: slotXs[2], y: yLine - 6, headingMode: "auto" },
+        { id: uid(), tMs: SAIL_UPCOURSE_END_MS, x: slotXs[2] + upwindDx, y: (yLine - 6) - upwindDy, headingMode: "auto" },
+        { id: uid(), tMs: 100000, x: slotXs[2] + upwindDx - 120, y: (yLine - 6) - upwindDy - 120, headingMode: "auto" },
+        { id: uid(), tMs: 120000, x: slotXs[2] + upwindDx - 220, y: (yLine - 6) - upwindDy - 220, headingMode: "auto" },
       ],
 
       [b4]: [
-        { id: uid(), tMs: 0, x: -80, y: 260, headingMode: "auto" },
-        { id: uid(), tMs: 16000, x: 140, y: 300, headingMode: "auto" },
-        { id: uid(), tMs: 34000, x: 240, y: 340, headingMode: "auto" },
-        { id: uid(), tMs: 50000, x: 280, y: 372, headingMode: "auto" },
-        { id: uid(), tMs: 56000, x: 275, y: 380, headingMode: "auto" }, // rack
-        { id: uid(), tMs: 60000, x: 290, y: 354, headingMode: "auto" },
+        { id: uid(), tMs: 0, x: -220, y: 120, headingMode: "auto" },
+        { id: uid(), tMs: 20000, x: 140, y: 190, headingMode: "auto" },
+        { id: uid(), tMs: 42000, x: slotXs[1] - 20, y: preStartY + 14, headingMode: "auto" },
+        { id: uid(), tMs: 52000, x: slotXs[1], y: rackY + 12, headingMode: "auto" },
+        { id: uid(), tMs: 56000, x: slotXs[1] - 12, y: rackY + 20, headingMode: "auto" },
+        { id: uid(), tMs: 59000, x: slotXs[1] + 8, y: rackY + 14, headingMode: "auto" },
+        { id: uid(), tMs: START_MS, x: slotXs[1], y: yLine - 6, headingMode: "auto" },
+        { id: uid(), tMs: SAIL_UPCOURSE_END_MS, x: slotXs[1] + upwindDx, y: (yLine - 6) - upwindDy, headingMode: "auto" },
+        { id: uid(), tMs: 100000, x: slotXs[1] + upwindDx - 120, y: (yLine - 6) - upwindDy - 120, headingMode: "auto" },
+        { id: uid(), tMs: 120000, x: slotXs[1] + upwindDx - 220, y: (yLine - 6) - upwindDy - 220, headingMode: "auto" },
       ],
 
       [b5]: [
-        { id: uid(), tMs: 0, x: 880, y: 280, headingMode: "auto" },
-        { id: uid(), tMs: 16000, x: 620, y: 310, headingMode: "auto" },
-        { id: uid(), tMs: 34000, x: 540, y: 345, headingMode: "auto" },
-        { id: uid(), tMs: 50000, x: 500, y: 374, headingMode: "auto" },
-        { id: uid(), tMs: 56000, x: 495, y: 382, headingMode: "auto" }, // rack
-        { id: uid(), tMs: 60000, x: 485, y: 353, headingMode: "auto" },
+        { id: uid(), tMs: 0, x: 1180, y: 120, headingMode: "auto" },
+        { id: uid(), tMs: 20000, x: 860, y: 190, headingMode: "auto" },
+        { id: uid(), tMs: 42000, x: slotXs[3] + 20, y: preStartY + 16, headingMode: "auto" },
+        { id: uid(), tMs: 52000, x: slotXs[3], y: rackY + 12, headingMode: "auto" },
+        { id: uid(), tMs: 56000, x: slotXs[3] + 14, y: rackY + 20, headingMode: "auto" },
+        { id: uid(), tMs: 59000, x: slotXs[3] - 10, y: rackY + 14, headingMode: "auto" },
+        { id: uid(), tMs: START_MS, x: slotXs[3], y: yLine - 6, headingMode: "auto" },
+        { id: uid(), tMs: SAIL_UPCOURSE_END_MS, x: slotXs[3] + upwindDx, y: (yLine - 6) - upwindDy, headingMode: "auto" },
+        { id: uid(), tMs: 100000, x: slotXs[3] + upwindDx - 120, y: (yLine - 6) - upwindDy - 120, headingMode: "auto" },
+        { id: uid(), tMs: 120000, x: slotXs[3] + upwindDx - 220, y: (yLine - 6) - upwindDy - 220, headingMode: "auto" },
       ],
     },
   };

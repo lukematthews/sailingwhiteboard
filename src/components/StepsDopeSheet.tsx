@@ -570,170 +570,134 @@ export default function StepsDopeSheet({
     <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-[240px_minmax(0,1fr)]">
         {/* LEFT: list */}
-        <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
-          <div className="flex items-center justify-between px-2 py-1">
-            <div className="text-xs font-medium text-slate-700">Timeline</div>
+        {/* LEFT: list */}
+        <div className="rounded-lg bg-white p-2 ring-1 ring-slate-200 flex flex-col">
+          {/* Sticky header */}
+          <div className="sticky top-0 z-10 bg-white pb-2">
+            <div className="flex items-center justify-between px-2 py-1">
+              <div className="text-xs font-medium text-slate-700">Timeline</div>
 
-            <div className="flex items-center gap-1 rounded-lg bg-slate-50 p-1 ring-1 ring-slate-200">
-              <button
-                type="button"
-                onClick={() => setViewKind("boat")}
-                className={`rounded-md px-2 py-1 text-[11px] ${
-                  viewKind === "boat"
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-700 hover:bg-slate-100"
-                }`}
-              >
-                Boats
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewKind("flag")}
-                className={`rounded-md px-2 py-1 text-[11px] ${
-                  viewKind === "flag"
-                    ? "bg-slate-900 text-white"
-                    : "text-slate-700 hover:bg-slate-100"
-                }`}
-              >
-                Flags
-              </button>
+              <div className="flex items-center gap-1 rounded-lg bg-slate-50 p-1 ring-1 ring-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setViewKind("boat")}
+                  className={`rounded-md px-2 py-1 text-[11px] ${
+                    viewKind === "boat"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  Boats
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewKind("flag")}
+                  className={`rounded-md px-2 py-1 text-[11px] ${
+                    viewKind === "flag"
+                      ? "bg-slate-900 text-white"
+                      : "text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  Flags
+                </button>
+              </div>
             </div>
           </div>
 
-          {viewKind === "boat" ? (
-            <div className="mt-2 space-y-1 px-1">
-              {/* ✅ None / Clear selection */}
-              <button
-                type="button"
-                onClick={clearSelection}
-                className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm ring-1 ${
-                  isNoneSelected
-                    ? "bg-slate-900 text-white ring-slate-900"
-                    : "bg-white text-slate-800 ring-slate-200 hover:bg-slate-50"
-                }`}
-                title="Clear selection"
-              >
-                <span className="truncate italic opacity-80">None</span>
-                <span
-                  className={`ml-2 shrink-0 rounded-md px-2 py-0.5 text-[11px] tabular-nums ${
-                    isNoneSelected
-                      ? "bg-white/15 text-white"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  ␀
-                </span>
-              </button>
+          {/* Scrollable list (cap to ~3 rows) */}
+          <div className="px-1">
+            <div className="max-h-[156px] overflow-y-auto pr-1">
+              {viewKind === "boat" ? (
+                <div className="space-y-1">
+                  {boats.length === 0 ? (
+                    <div className="px-2 py-2 text-xs text-slate-500">
+                      No boats yet.
+                    </div>
+                  ) : (
+                    boats.map((b) => {
+                      const isSel = b.id === selectedBoatId;
+                      const count = (stepsByBoatId[b.id] || []).length;
 
-              {boats.length === 0 ? (
-                <div className="px-2 py-2 text-xs text-slate-500">
-                  No boats yet.
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => {
+                            setViewKind("boat");
+                            setSelectedBoatId(b.id);
+                            setSelectedFlagId(null);
+                          }}
+                          className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm ring-1 ${
+                            isSel
+                              ? "bg-slate-900 text-white ring-slate-900"
+                              : "bg-white text-slate-800 ring-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="truncate">{b.label}</span>
+                          <span
+                            className={`ml-2 shrink-0 rounded-md px-2 py-0.5 text-[11px] tabular-nums ${
+                              isSel
+                                ? "bg-white/15 text-white"
+                                : "bg-slate-100 text-slate-700"
+                            }`}
+                            title="Steps"
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
               ) : (
-                boats.map((b) => {
-                  const isSel = b.id === selectedBoatId;
-                  const count = (stepsByBoatId[b.id] || []).length;
+                <div className="space-y-1">
+                  {flags.length === 0 ? (
+                    <div className="px-2 py-2 text-xs text-slate-500">
+                      No flags.
+                    </div>
+                  ) : (
+                    flags.map((f) => {
+                      const isSel = f.id === selectedFlagId;
+                      const count = (flagClipsByFlagId[f.id] || []).length;
 
-                  return (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() => {
-                        setViewKind("boat");
-                        setSelectedBoatId(b.id);
-                        setSelectedFlagId(null);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm ring-1 ${
-                        isSel
-                          ? "bg-slate-900 text-white ring-slate-900"
-                          : "bg-white text-slate-800 ring-slate-200 hover:bg-slate-50"
-                      }`}
-                    >
-                      <span className="truncate">{b.label}</span>
-                      <span
-                        className={`ml-2 shrink-0 rounded-md px-2 py-0.5 text-[11px] tabular-nums ${
-                          isSel
-                            ? "bg-white/15 text-white"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
-                        title="Steps"
-                      >
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-          ) : (
-            <div className="mt-2 space-y-1 px-1">
-              {/* ✅ None / Clear selection */}
-              <button
-                type="button"
-                onClick={clearSelection}
-                className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm ring-1 ${
-                  isNoneSelected
-                    ? "bg-slate-900 text-white ring-slate-900"
-                    : "bg-white text-slate-800 ring-slate-200 hover:bg-slate-50"
-                }`}
-                title="Clear selection"
-              >
-                <span className="truncate italic opacity-80">None</span>
-                <span
-                  className={`ml-2 shrink-0 rounded-md px-2 py-0.5 text-[11px] tabular-nums ${
-                    isNoneSelected
-                      ? "bg-white/15 text-white"
-                      : "bg-slate-100 text-slate-700"
-                  }`}
-                >
-                  ␀
-                </span>
-              </button>
-
-              {flags.length === 0 ? (
-                <div className="px-2 py-2 text-xs text-slate-500">
-                  No flags.
+                      return (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onClick={() => {
+                            setViewKind("flag");
+                            setSelectedFlagId(f.id);
+                            setSelectedBoatId(null);
+                          }}
+                          className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm ring-1 ${
+                            isSel
+                              ? "bg-slate-900 text-white ring-slate-900"
+                              : "bg-white text-slate-800 ring-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          <span className="truncate">
+                            Flag <span className="font-semibold">{f.code}</span>
+                          </span>
+                          <span
+                            className={`ml-2 shrink-0 rounded-md px-2 py-0.5 text-[11px] tabular-nums ${
+                              isSel
+                                ? "bg-white/15 text-white"
+                                : "bg-slate-100 text-slate-700"
+                            }`}
+                            title="Clips"
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })
+                  )}
                 </div>
-              ) : (
-                flags.map((f) => {
-                  const isSel = f.id === selectedFlagId;
-                  const count = (flagClipsByFlagId[f.id] || []).length;
-
-                  return (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => {
-                        setViewKind("flag");
-                        setSelectedFlagId(f.id);
-                        setSelectedBoatId(null);
-                      }}
-                      className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm ring-1 ${
-                        isSel
-                          ? "bg-slate-900 text-white ring-slate-900"
-                          : "bg-white text-slate-800 ring-slate-200 hover:bg-slate-50"
-                      }`}
-                    >
-                      <span className="truncate">
-                        Flag <span className="font-semibold">{f.code}</span>
-                      </span>
-                      <span
-                        className={`ml-2 shrink-0 rounded-md px-2 py-0.5 text-[11px] tabular-nums ${
-                          isSel
-                            ? "bg-white/15 text-white"
-                            : "bg-slate-100 text-slate-700"
-                        }`}
-                        title="Clips"
-                      >
-                        {count}
-                      </span>
-                    </button>
-                  );
-                })
               )}
             </div>
-          )}
+          </div>
 
+          {/* Controls */}
           <div className="mt-3 border-t border-slate-200 px-2 pt-2">
             <label className="flex items-center gap-2 text-xs text-slate-700">
               <input
@@ -745,7 +709,6 @@ export default function StepsDopeSheet({
             </label>
           </div>
         </div>
-
         {/* RIGHT: focused editor */}
         <div className="rounded-lg bg-white ring-1 ring-slate-200">
           <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2">

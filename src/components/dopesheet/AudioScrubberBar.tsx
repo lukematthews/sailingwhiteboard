@@ -20,9 +20,6 @@ export default function AudioScrubberBar(props: {
 
   playbackRate: number;
   setPlaybackRate: (r: number) => void;
-
-  ripple: boolean;
-  setRipple: (v: boolean) => void;
 }) {
   const {
     timeMs,
@@ -35,8 +32,6 @@ export default function AudioScrubberBar(props: {
     isPlaying,
     playbackRate,
     setPlaybackRate,
-    ripple,
-    setRipple,
   } = props;
 
   const barRef = React.useRef<HTMLDivElement | null>(null);
@@ -213,16 +208,6 @@ export default function AudioScrubberBar(props: {
                   <option value="1.5">1.5×</option>
                   <option value="2">2×</option>
                 </select>
-              </label>
-
-              {/* Ripple */}
-              <label className="flex items-center gap-2 rounded-xl bg-white/5 px-3 py-2 text-xs text-slate-200 ring-1 ring-white/10">
-                <input
-                  type="checkbox"
-                  checked={ripple}
-                  onChange={(e) => setRipple(e.target.checked)}
-                />
-                Ripple
               </label>
             </div>
           </div>

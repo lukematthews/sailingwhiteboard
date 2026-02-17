@@ -36,9 +36,7 @@ import { useCanvasInteractions } from "./builder/useCanvasInteractions";
 import RightSidebar from "./builder/RightSidebar";
 import TimelinePanel from "./builder/TimelinePanel";
 import AudioScrubberBar from "./components/dopesheet/AudioScrubberBar";
-import {
-  WelcomeOverlay,
-} from "./builder/WelcomeOverlay";
+import { WelcomeOverlay } from "./builder/WelcomeOverlay";
 import { getScenarioProjectFile, ScenarioKey } from "./builder/scenarios";
 
 const WELCOME_HIDE_KEY = "swb_welcome_hide";
@@ -259,9 +257,9 @@ export default function SailingAnimationBuilder() {
     [
       loadProject,
       setIsPlaying,
-      setTimeMs,
       setSelectedBoatId,
       setSelectedFlagId,
+      setTimeMs,
     ],
   );
 
@@ -381,8 +379,6 @@ export default function SailingAnimationBuilder() {
               isPlaying={isPlaying}
               playbackRate={playbackRate}
               setPlaybackRate={setPlaybackRate}
-              ripple={false}
-              setRipple={() => {}}
             />
           </div>
 
