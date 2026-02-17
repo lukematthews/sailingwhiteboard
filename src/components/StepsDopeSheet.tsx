@@ -169,6 +169,7 @@ export default function StepsDopeSheet({
   setFlagClipsByFlagId,
   selectedFlagId,
   setSelectedFlagId,
+  isPlaying = false,
 }: Props) {
   const frame = frameStepMs(fps);
   const stepMs = frame;
@@ -195,38 +196,38 @@ export default function StepsDopeSheet({
   /**
    * ✅ IMPORTANT CHANGE:
    * - viewKind controls the left navigator tab ("Boats"/"Flags")
-   * - selection remains in selectedBoatId / selectedFlagId
-   * - we DO NOT have an effect that clears the opposite selection automatically
+   * - selection remains in selectedBoatId / selectedFlagId (may be null)
+   * - we DO NOT auto-select when switching tabs
    */
   const selectionKind: SelectedKind = selectedFlagId ? "flag" : "boat";
   const [viewKind, setViewKind] = useState<SelectedKind>(selectionKind);
 
-  // When user selects something explicitly elsewhere (eg add first flag),
-  // follow it in the UI tab, but this won't ping-pong because we aren't
-  // also clearing selection in another effect.
+  // Follow explicit selection changes (e.g. clicking a boat, adding first flag)
   useEffect(() => {
     setViewKind(selectionKind);
   }, [selectionKind]);
 
-  // Ensure there is a selection for the current view (idempotent, no clearing).
+  // ✅ Allow "no selection". Only enforce mutual exclusivity if both end up set.
   useEffect(() => {
-    if (viewKind === "boat") {
-      if (!selectedBoatId && boats.length > 0) setSelectedBoatId(boats[0].id);
-    } else {
-      if (!selectedFlagId && flags.length > 0) setSelectedFlagId(flags[0].id);
+    if (selectedBoatId && selectedFlagId) {
+      if (viewKind === "boat") setSelectedFlagId(null);
+      else setSelectedBoatId(null);
     }
-    // only depend on lengths + ids to avoid reruns from array identity churn
   }, [
-    viewKind,
     selectedBoatId,
     selectedFlagId,
-    boats.length,
-    flags.length,
+    viewKind,
     setSelectedBoatId,
     setSelectedFlagId,
-    boats,
-    flags,
   ]);
+
+  // (Optional) If you decide you want to clear selection when playing:
+  // useEffect(() => {
+  //   if (isPlaying) {
+  //     setSelectedBoatId(null);
+  //     setSelectedFlagId(null);
+  //   }
+  // }, [isPlaying, setSelectedBoatId, setSelectedFlagId]);
 
   const scrubTo = useCallback(
     (t: number) => {
@@ -335,17 +336,10 @@ export default function StepsDopeSheet({
 
       const movedInteriorIndex = bestI - 1;
 
-      const interior = snappedFull.slice(1, -1);
+      // interior by index (stable order)
+      const interiorByIndex = snappedFull.slice(1, -1);
 
-      // 🚫 PREVENT CROSSING MANUALLY
-      for (let i = 0; i < interior.length; i++) {
-        const minT = i === 0 ? 0 : interior[i - 1] + frame;
-        const maxT =
-          i === interior.length - 1 ? durationMs : interior[i + 1] - frame;
-
-        interior[i] = clamp(interior[i], minT, maxT);
-      }
-
+      // select the moved step
       const movedStep = lane[movedInteriorIndex];
       if (movedStep) {
         setViewKind("boat");
@@ -361,42 +355,16 @@ export default function StepsDopeSheet({
 
       setStepsByBoatId((prev) => {
         const lanePrev = sortSteps(prev[boatId] || []);
-        if (lanePrev.length === 0) return prev;
+        if (!lanePrev.length) return prev;
 
-        const oldTimes = lanePrev.map((s) => s.tMs);
-        const nextTimes = oldTimes.slice();
-
-        const oldT = oldTimes[movedInteriorIndex];
-        const newT = interior[movedInteriorIndex];
-        const delta = newT - oldT;
-
-        nextTimes[movedInteriorIndex] = newT;
-
-        // ✅ ripple using ORIGINAL times
-        if (ripple && delta !== 0) {
-          for (let i = movedInteriorIndex + 1; i < nextTimes.length; i++) {
-            nextTimes[i] = clamp(oldTimes[i] + delta, 0, durationMs);
-          }
-        }
-
-        // enforce monotonic forward
-        for (let i = 1; i < nextTimes.length; i++) {
-          if (nextTimes[i] <= nextTimes[i - 1]) {
-            nextTimes[i] = nextTimes[i - 1] + frame;
-          }
-        }
-
-        // enforce backward
-        for (let i = nextTimes.length - 2; i >= 0; i--) {
-          if (nextTimes[i] >= nextTimes[i + 1]) {
-            nextTimes[i] = nextTimes[i + 1] - frame;
-          }
-        }
-
-        const nextLane = lanePrev.map((s, i) => ({
-          ...s,
-          tMs: clamp(nextTimes[i], 0, durationMs),
-        }));
+        const nextLane = buildUpdatedLaneTimes({
+          lane: lanePrev,
+          snappedInteriorByIndex: interiorByIndex,
+          movedInteriorIndex,
+          rippleEnabled: ripple,
+          durationMs,
+          frame,
+        });
 
         return { ...prev, [boatId]: nextLane };
       });
@@ -414,37 +382,45 @@ export default function StepsDopeSheet({
     ],
   );
 
-  const moveStep = useCallback(
+  const updateStepTime = useCallback(
     (boatId: string, stepId: string, newTimeMs: number) => {
+      const t = snapClamp(newTimeMs, durationMs, fps);
       setIsPlaying(false);
 
       setStepsByBoatId((prev) => {
         const lane = sortSteps(prev[boatId] || []);
+        if (!lane.length) return prev;
+
         const idx = lane.findIndex((s) => s.id === stepId);
         if (idx === -1) return prev;
 
         const oldT = lane[idx].tMs;
-        const delta = newTimeMs - oldT;
+        const delta = t - oldT;
 
-        // apply moved time
-        const next = lane.map((s, i) => {
-          if (i === idx) return { ...s, tMs: newTimeMs };
-          if (ripple && i > idx)
-            return { ...s, tMs: clamp(s.tMs + delta, 0, durationMs) };
-          return s;
-        });
+        let next = lane.map((s) => (s.id === stepId ? { ...s, tMs: t } : s));
 
-        // enforce increasing by >= frame
-        const frame = stepMs;
-        const sorted = sortSteps(next);
-        for (let i = 1; i < sorted.length; i++) {
-          if (sorted[i].tMs <= sorted[i - 1].tMs)
-            sorted[i].tMs = sorted[i - 1].tMs + frame;
+        // ripple shifts steps after the moved step (by original ordering/time)
+        if (ripple && delta !== 0) {
+          next = next.map((s) => {
+            if (s.id === stepId) return s;
+            if (s.tMs > oldT)
+              return { ...s, tMs: clamp(s.tMs + delta, 0, durationMs) };
+            return s;
+          });
         }
-        return { ...prev, [boatId]: sorted };
+
+        // enforce increasing
+        next = sortSteps(next);
+        for (let i = 1; i < next.length; i++) {
+          if (next[i].tMs <= next[i - 1].tMs)
+            next[i].tMs = next[i - 1].tMs + frame;
+        }
+        next = next.map((s) => ({ ...s, tMs: clamp(s.tMs, 0, durationMs) }));
+
+        return { ...prev, [boatId]: next };
       });
     },
-    [durationMs, ripple, setIsPlaying, setStepsByBoatId, stepMs],
+    [durationMs, fps, ripple, frame, setStepsByBoatId, setIsPlaying],
   );
 
   // ----------------------------
@@ -561,49 +537,6 @@ export default function StepsDopeSheet({
     ],
   );
 
-  const updateStepTime = useCallback(
-    (boatId: string, stepId: string, newTimeMs: number) => {
-      const t = snapClamp(newTimeMs, durationMs, fps);
-
-      setIsPlaying(false);
-
-      setStepsByBoatId((prev) => {
-        const lane = sortSteps(prev[boatId] || []);
-        if (!lane.length) return prev;
-
-        const idx = lane.findIndex((s) => s.id === stepId);
-        if (idx === -1) return prev;
-
-        const oldT = lane[idx].tMs;
-        const delta = t - oldT;
-
-        // apply move
-        let next = lane.map((s) => (s.id === stepId ? { ...s, tMs: t } : s));
-
-        // ripple (shift steps after the moved step)
-        if (ripple && delta !== 0) {
-          next = next.map((s) => {
-            if (s.id === stepId) return s;
-            if (s.tMs > oldT)
-              return { ...s, tMs: clamp(s.tMs + delta, 0, durationMs) };
-            return s;
-          });
-        }
-
-        // enforce strictly increasing by >= frame
-        next = sortSteps(next);
-        for (let i = 1; i < next.length; i++) {
-          if (next[i].tMs <= next[i - 1].tMs)
-            next[i].tMs = next[i - 1].tMs + frame;
-        }
-        next = next.map((s) => ({ ...s, tMs: clamp(s.tMs, 0, durationMs) }));
-
-        return { ...prev, [boatId]: next };
-      });
-    },
-    [durationMs, fps, ripple, frame, setStepsByBoatId, setIsPlaying],
-  );
-
   // ----------------------------
   // Focused targets
   // ----------------------------
@@ -621,16 +554,17 @@ export default function StepsDopeSheet({
     return sortSteps(stepsByBoatId[selectedBoatId] || []);
   }, [selectedBoatId, stepsByBoatId]);
 
-  const focusedBoatSliderValues = useMemo(() => {
-    if (!selectedBoatId) return [0, durationMs];
-    const interior = focusedBoatLane.map((s) => s.tMs);
-    return [0, ...interior, durationMs];
-  }, [selectedBoatId, focusedBoatLane, durationMs]);
-
   const focusedFlagClips = useMemo(() => {
     if (!selectedFlagId) return [];
     return sortClips(flagClipsByFlagId[selectedFlagId] ?? []);
   }, [selectedFlagId, flagClipsByFlagId]);
+
+  const clearSelection = useCallback(() => {
+    setSelectedBoatId(null);
+    setSelectedFlagId(null);
+  }, [setSelectedBoatId, setSelectedFlagId]);
+
+  const isNoneSelected = !selectedBoatId && !selectedFlagId;
 
   return (
     <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
@@ -668,6 +602,29 @@ export default function StepsDopeSheet({
 
           {viewKind === "boat" ? (
             <div className="mt-2 space-y-1 px-1">
+              {/* ✅ None / Clear selection */}
+              <button
+                type="button"
+                onClick={clearSelection}
+                className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm ring-1 ${
+                  isNoneSelected
+                    ? "bg-slate-900 text-white ring-slate-900"
+                    : "bg-white text-slate-800 ring-slate-200 hover:bg-slate-50"
+                }`}
+                title="Clear selection"
+              >
+                <span className="truncate italic opacity-80">None</span>
+                <span
+                  className={`ml-2 shrink-0 rounded-md px-2 py-0.5 text-[11px] tabular-nums ${
+                    isNoneSelected
+                      ? "bg-white/15 text-white"
+                      : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  ␀
+                </span>
+              </button>
+
               {boats.length === 0 ? (
                 <div className="px-2 py-2 text-xs text-slate-500">
                   No boats yet.
@@ -710,6 +667,29 @@ export default function StepsDopeSheet({
             </div>
           ) : (
             <div className="mt-2 space-y-1 px-1">
+              {/* ✅ None / Clear selection */}
+              <button
+                type="button"
+                onClick={clearSelection}
+                className={`flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm ring-1 ${
+                  isNoneSelected
+                    ? "bg-slate-900 text-white ring-slate-900"
+                    : "bg-white text-slate-800 ring-slate-200 hover:bg-slate-50"
+                }`}
+                title="Clear selection"
+              >
+                <span className="truncate italic opacity-80">None</span>
+                <span
+                  className={`ml-2 shrink-0 rounded-md px-2 py-0.5 text-[11px] tabular-nums ${
+                    isNoneSelected
+                      ? "bg-white/15 text-white"
+                      : "bg-slate-100 text-slate-700"
+                  }`}
+                >
+                  ␀
+                </span>
+              </button>
+
               {flags.length === 0 ? (
                 <div className="px-2 py-2 text-xs text-slate-500">
                   No flags.
@@ -810,7 +790,9 @@ export default function StepsDopeSheet({
           <div className="p-3">
             {viewKind === "boat" ? (
               !selectedBoatId ? (
-                <div className="text-sm text-slate-500">Select a boat.</div>
+                <div className="text-sm text-slate-500">
+                  No boat selected. Choose one from the list (or keep “None”).
+                </div>
               ) : (
                 <FocusedBoatLane
                   laneSteps={focusedBoatLane}
@@ -827,13 +809,14 @@ export default function StepsDopeSheet({
                     deleteStepById(selectedBoatId, stepId)
                   }
                   onMoveStep={(stepId, newTimeMs) => {
-                    // move the step to a new time (the StepTrack drives this)
                     updateStepTime(selectedBoatId, stepId, newTimeMs);
                   }}
                 />
               )
             ) : !selectedFlagId ? (
-              <div className="text-sm text-slate-500">Select a flag.</div>
+              <div className="text-sm text-slate-500">
+                No flag selected. Choose one from the list (or keep “None”).
+              </div>
             ) : (
               <FocusedFlagLane
                 clips={focusedFlagClips}
@@ -889,6 +872,7 @@ function FocusedFlagLane(props: {
     onSelectClip,
     onDeleteClip,
     onClipRangeChange,
+    onScrubTo,
   } = props;
 
   return (
@@ -917,7 +901,9 @@ function FocusedFlagLane(props: {
                           ? "bg-emerald-50 text-emerald-900 ring-emerald-200 hover:bg-emerald-100"
                           : "bg-slate-50 text-slate-800 ring-slate-200 hover:bg-slate-100"
                   }`}
-                  title={`Clip ${i + 1}: ${c.code} (${formatTime(c.startMs)} → ${formatTime(c.endMs)})`}
+                  title={`Clip ${i + 1}: ${c.code} (${formatTime(
+                    c.startMs,
+                  )} → ${formatTime(c.endMs)})`}
                   type="button"
                 >
                   {c.code}
@@ -976,6 +962,16 @@ function FocusedFlagLane(props: {
                       Number(arr[1]),
                     ]);
                     onSelectClip(clip.id);
+                  }}
+                  onAfterChange={(v) => {
+                    const arr = v as number[];
+                    onClipRangeChange(clip.id, [
+                      Number(arr[0]),
+                      Number(arr[1]),
+                    ]);
+                    onSelectClip(clip.id);
+                    // Optional: scrub to start for feedback
+                    onScrubTo(Number(arr[0]));
                   }}
                   tooltip={{
                     formatter: (v) =>

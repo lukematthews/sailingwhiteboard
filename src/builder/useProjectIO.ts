@@ -6,6 +6,7 @@ import type {
   FlagClipsByFlagId,
   KeyframesByBoatId,
   Mark,
+  StepsByBoatId,
   StartLine,
   Wind,
 } from "../types";
@@ -21,6 +22,7 @@ type Args = {
   fps: number;
   boats: Boat[];
   keyframesByBoatId: KeyframesByBoatId;
+  stepsByBoatId: StepsByBoatId;
   marks: Mark[];
   wind: Wind;
   startLine: StartLine;
@@ -31,6 +33,7 @@ type Args = {
   setFps: (v: number) => void;
   setBoats: React.Dispatch<React.SetStateAction<Boat[]>>;
   setKeyframesByBoatId: React.Dispatch<React.SetStateAction<KeyframesByBoatId>>;
+  setStepsByBoatId: React.Dispatch<React.SetStateAction<StepsByBoatId>>;
   setMarks: React.Dispatch<React.SetStateAction<Mark[]>>;
   setWind: React.Dispatch<React.SetStateAction<Wind>>;
   setStartLine: React.Dispatch<React.SetStateAction<StartLine>>;
@@ -53,6 +56,7 @@ export function useProjectIO(args: Args) {
     fps,
     boats,
     keyframesByBoatId,
+    stepsByBoatId,
     marks,
     wind,
     startLine,
@@ -63,6 +67,7 @@ export function useProjectIO(args: Args) {
     setFps,
     setBoats,
     setKeyframesByBoatId,
+    setStepsByBoatId,
     setMarks,
     setWind,
     setStartLine,
@@ -80,11 +85,12 @@ export function useProjectIO(args: Args) {
 
   const exportProject = useCallback(() => {
     const project: ProjectFile = {
-      version: 3,
+      version: 4,
       durationMs,
       fps,
       boats,
       keyframesByBoatId,
+      stepsByBoatId,
       marks,
       wind,
       startLine,
@@ -97,6 +103,7 @@ export function useProjectIO(args: Args) {
     fps,
     boats,
     keyframesByBoatId,
+    stepsByBoatId,
     marks,
     wind,
     startLine,
@@ -105,37 +112,48 @@ export function useProjectIO(args: Args) {
     setExportText,
   ]);
 
-  const importProject = useCallback(() => {
-    try {
-      const parsed = JSON.parse(exportText) as Partial<ProjectFile> & {
-        flagVisibilityById?: unknown;
-      };
-      if (!parsed || typeof parsed !== "object") return;
-
+  const applyProject = useCallback(
+    (parsed: Partial<ProjectFile> & { flagVisibilityById?: unknown }) => {
       setDurationMs(
-        typeof parsed.durationMs === "number"
+        typeof parsed.durationMs === "number" && parsed.durationMs > 0
           ? parsed.durationMs
           : DEFAULT_DURATION_MS,
       );
-      setFps(typeof parsed.fps === "number" ? parsed.fps : DEFAULT_FPS);
+      setFps(
+        typeof parsed.fps === "number" && parsed.fps > 0
+          ? parsed.fps
+          : DEFAULT_FPS,
+      );
 
       setBoats(Array.isArray(parsed.boats) ? (parsed.boats as Boat[]) : []);
+
       setKeyframesByBoatId(
         parsed.keyframesByBoatId && typeof parsed.keyframesByBoatId === "object"
           ? (parsed.keyframesByBoatId as KeyframesByBoatId)
           : {},
       );
+
+      // ✅ v4+: steps-based animation lanes
+      setStepsByBoatId(
+        parsed.stepsByBoatId && typeof parsed.stepsByBoatId === "object"
+          ? (parsed.stepsByBoatId as StepsByBoatId)
+          : {},
+      );
+
       setMarks(Array.isArray(parsed.marks) ? (parsed.marks as Mark[]) : []);
+
       setWind(
         parsed.wind && typeof parsed.wind === "object"
           ? (parsed.wind as Wind)
           : { fromDeg: 210, speedKt: 18 },
       );
+
       setStartLine(
         parsed.startLine && typeof parsed.startLine === "object"
           ? (parsed.startLine as StartLine)
           : { ...DEFAULT_START_LINE, startBoatId: null },
       );
+
       setFlags(Array.isArray(parsed.flags) ? (parsed.flags as Flag[]) : []);
 
       // Back-compat: older save format used `flagVisibilityById`
@@ -156,25 +174,48 @@ export function useProjectIO(args: Args) {
       setIsPlaying(false);
       setSelectedBoatId(null);
       setSelectedFlagId(null);
-    } catch {
-      // ignore parse errors
-    }
-  }, [
-    exportText,
-    setDurationMs,
-    setFps,
-    setBoats,
-    setKeyframesByBoatId,
-    setMarks,
-    setWind,
-    setStartLine,
-    setFlags,
-    setFlagClipsByFlagId,
-    setTimeMs,
-    setIsPlaying,
-    setSelectedBoatId,
-    setSelectedFlagId,
-  ]);
+    },
+    [
+      setBoats,
+      setDurationMs,
+      setFlagClipsByFlagId,
+      setFlags,
+      setFps,
+      setIsPlaying,
+      setKeyframesByBoatId,
+      setMarks,
+      setSelectedBoatId,
+      setSelectedFlagId,
+      setStartLine,
+      setStepsByBoatId,
+      setTimeMs,
+      setWind,
+    ],
+  );
 
-  return { exportProject, importProject };
+  const loadProject = useCallback(
+    (project: ProjectFile) => {
+      applyProject(project);
+      setExportText(JSON.stringify(project, null, 2));
+    },
+    [applyProject, setExportText],
+  );
+
+  const importProject = useCallback(
+    (text?: string) => {
+      try {
+        const source = typeof text === "string" ? text : exportText;
+        const parsed = JSON.parse(source) as Partial<ProjectFile> & {
+          flagVisibilityById?: unknown;
+        };
+        if (!parsed || typeof parsed !== "object") return;
+        applyProject(parsed);
+      } catch {
+        // ignore parse errors
+      }
+    },
+    [applyProject, exportText],
+  );
+
+  return { exportProject, importProject, loadProject };
 }

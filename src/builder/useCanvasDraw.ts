@@ -1,3 +1,4 @@
+// src/builder/useCanvasDraw.ts
 import { useEffect } from "react";
 import { formatTime, snapTime } from "../lib/time";
 import { drawBoat } from "../canvas/boat";
@@ -32,21 +33,22 @@ type Args = {
   fps: number;
   selectedBoatId: string | null;
 
-  // ✅ wind always drawn
+  // ✅ NEW: hide selection while playing
+  isPlaying: boolean;
+
   wind: Wind;
 
-  // ✅ independent visibility controls
   showMarks: boolean;
   marks: Mark[];
-
   showStartLine: boolean;
   startLine: StartLine;
+
+  showMarkThreeBL: boolean;
+  showBoatTransomLines: boolean;
 
   flags: Flag[];
   flagClipsByFlagId: FlagClipsByFlagId;
   selectedFlagId: string | null;
-
-  // redraw tick for async-loaded flag SVG assets
   assetTick: number;
 };
 
@@ -61,26 +63,21 @@ export function useCanvasDraw(args: Args) {
     durationMs,
     fps,
     selectedBoatId,
-
+    isPlaying,
     wind,
-
     showMarks,
     marks,
-
     showStartLine,
     startLine,
-
+    showMarkThreeBL,
+    showBoatTransomLines,
     flags,
     flagClipsByFlagId,
     selectedFlagId,
-
     assetTick,
   } = args;
 
   useEffect(() => {
-    // explicitly reference assetTick so it’s obvious why it’s in deps
-    void assetTick;
-
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -98,35 +95,23 @@ export function useCanvasDraw(args: Args) {
       canvas.height = h;
     }
 
-    // Draw in CSS pixels, but with HiDPI backing store.
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // ------------------------------------------------------------------
-    // background
-    // ------------------------------------------------------------------
     drawGrid(ctx, rect.width, rect.height);
 
-    // ------------------------------------------------------------------
     // behind boats
-    // ------------------------------------------------------------------
-
-    // ✅ always draw wind
     drawWind(ctx, wind, { x: 90, y: 70 });
 
-    // ✅ independent toggles
     if (showStartLine) drawStartLine(ctx, startLine);
 
     if (showMarks) {
-      for (const m of marks) drawMark(ctx, m);
+      for (const m of marks) drawMark(ctx, m, { showThreeBoatLengthCircle: showMarkThreeBL });
     }
 
-    // ------------------------------------------------------------------
-    // tracks (under ghosts + boats)
-    // ------------------------------------------------------------------
+    // tracks
     ctx.save();
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 6]);
-
     for (const b of boats) {
       const steps = stepsByBoatId[b.id] || [];
       if (steps.length < 2) continue;
@@ -135,18 +120,13 @@ export function useCanvasDraw(args: Args) {
       if (pts.length < 2) continue;
 
       ctx.beginPath();
-      pts.forEach((pt, i) =>
-        i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y),
-      );
+      pts.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
       ctx.strokeStyle = "rgba(0,0,0,0.18)";
       ctx.stroke();
     }
-
     ctx.restore();
 
-    // ------------------------------------------------------------------
     // ghosts
-    // ------------------------------------------------------------------
     const snappedNow = snapTime(timeMs, fps);
     const frame = frameStepMs(fps);
 
@@ -175,11 +155,11 @@ export function useCanvasDraw(args: Args) {
         ctx.save();
         ctx.globalAlpha = isClosest ? 0.45 : 0.18;
 
-        drawBoat(ctx, {
-          ...poseAtStep,
-          label: "",
-          color: isClosest ? b.color : "#94a3b8",
-        });
+        drawBoat(
+          ctx,
+          { ...poseAtStep, label: "", color: isClosest ? b.color : "#94a3b8" },
+          { showTransomOverlap: showBoatTransomLines },
+        );
 
         ctx.globalAlpha = isClosest ? 0.75 : 0.45;
         drawStepBadge(ctx, poseAtStep.x, poseAtStep.y - 44, String(i + 1));
@@ -188,13 +168,12 @@ export function useCanvasDraw(args: Args) {
       }
     }
 
-    // ------------------------------------------------------------------
     // current boats
-    // ------------------------------------------------------------------
     for (const b of displayedBoats) {
-      drawBoat(ctx, b);
+      drawBoat(ctx, b, { showTransomOverlap: showBoatTransomLines });
 
-      if (b.id === selectedBoatId) {
+      // ✅ Hide selection ring while playing
+      if (!isPlaying && b.id === selectedBoatId) {
         ctx.save();
         ctx.beginPath();
         ctx.arc(b.x, b.y, 38, 0, Math.PI * 2);
@@ -206,27 +185,19 @@ export function useCanvasDraw(args: Args) {
       }
     }
 
-    // ------------------------------------------------------------------
     // flags overlay
-    // ------------------------------------------------------------------
     for (const f of flags) {
       const code = resolveActiveFlagCode(f, flagClipsByFlagId[f.id], timeMs);
       if (!code) continue;
       drawFlag(ctx, f, code, selectedFlagId === f.id);
     }
 
-    // ------------------------------------------------------------------
     // time indicator
-    // ------------------------------------------------------------------
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.7)";
     ctx.font = "12px ui-sans-serif, system-ui";
     ctx.textAlign = "left";
-    ctx.fillText(
-      `t = ${formatTime(timeMs)} / ${formatTime(durationMs)}`,
-      12,
-      18,
-    );
+    ctx.fillText(`t = ${formatTime(timeMs)} / ${formatTime(durationMs)}`, 12, 18);
     ctx.restore();
   }, [
     canvasRef,
@@ -238,11 +209,14 @@ export function useCanvasDraw(args: Args) {
     durationMs,
     fps,
     selectedBoatId,
+    isPlaying,
     wind,
     showMarks,
     marks,
     showStartLine,
     startLine,
+    showMarkThreeBL,
+    showBoatTransomLines,
     flags,
     flagClipsByFlagId,
     selectedFlagId,

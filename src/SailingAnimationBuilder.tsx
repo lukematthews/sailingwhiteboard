@@ -1,5 +1,5 @@
 // src/SailingAnimationBuilder.tsx
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { uid } from "./lib/ids";
 
 import StepsDopeSheet from "./components/StepsDopeSheet";
@@ -36,6 +36,12 @@ import { useCanvasInteractions } from "./builder/useCanvasInteractions";
 import RightSidebar from "./builder/RightSidebar";
 import TimelinePanel from "./builder/TimelinePanel";
 import AudioScrubberBar from "./components/dopesheet/AudioScrubberBar";
+import {
+  WelcomeOverlay,
+} from "./builder/WelcomeOverlay";
+import { getScenarioProjectFile, ScenarioKey } from "./builder/scenarios";
+
+const WELCOME_HIDE_KEY = "swb_welcome_hide";
 
 export default function SailingAnimationBuilder() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -83,6 +89,8 @@ export default function SailingAnimationBuilder() {
 
   const [showStartLine, setShowStartLine] = useState(true);
   const [showMarks, setShowMarks] = useState(true);
+  const [showMarkThreeBL, setShowMarkThreeBL] = useState(false);
+  const [showBoatTransomLines, setShowBoatTransomLines] = useState(false);
 
   // course
   const [marks, setMarks] = useState<Mark[]>(() => DEFAULT_MARKS);
@@ -130,16 +138,20 @@ export default function SailingAnimationBuilder() {
     durationMs,
     fps,
     selectedBoatId,
-    wind, // ✅ always
+    isPlaying,
+    wind,
     showMarks,
     marks,
     showStartLine,
     startLine,
+    showMarkThreeBL,
+    showBoatTransomLines,
     flags,
     flagClipsByFlagId,
     selectedFlagId,
     assetTick,
   });
+
   // --- pointer interactions (moved to hook; identical behavior) ---
   useCanvasInteractions({
     canvasRef,
@@ -168,11 +180,12 @@ export default function SailingAnimationBuilder() {
   // --- import/export (moved to hook; identical behavior) ---
   const [exportText, setExportText] = useState("");
 
-  const { exportProject, importProject } = useProjectIO({
+  const { exportProject, importProject, loadProject } = useProjectIO({
     durationMs,
     fps,
     boats,
     keyframesByBoatId,
+    stepsByBoatId,
     marks,
     wind,
     startLine,
@@ -183,6 +196,7 @@ export default function SailingAnimationBuilder() {
     setFps,
     setBoats,
     setKeyframesByBoatId,
+    setStepsByBoatId,
     setMarks,
     setWind,
     setStartLine,
@@ -197,6 +211,59 @@ export default function SailingAnimationBuilder() {
     exportText,
     setExportText,
   });
+
+  // ---------------------------------------------------------------------------
+  // ✅ Welcome overlay state (localStorage)
+  // ---------------------------------------------------------------------------
+  const [dontShowWelcome, setDontShowWelcome] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(WELCOME_HIDE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(WELCOME_HIDE_KEY) !== "1";
+    } catch {
+      return true;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(WELCOME_HIDE_KEY, dontShowWelcome ? "1" : "0");
+    } catch {}
+  }, [dontShowWelcome]);
+
+  const loadScenario = useCallback(
+    (key: ScenarioKey) => {
+      setShowWelcome(false);
+
+      // Always start scenarios paused at t=0.
+      setIsPlaying(false);
+      setTimeMs(0);
+
+      const project = getScenarioProjectFile(key);
+
+      // ✅ no JSON, no parsing, no mismatch
+      loadProject(project);
+
+      // Optional: blank should start with nothing selected
+      if (key === "blank") {
+        setSelectedBoatId(null);
+        setSelectedFlagId(null);
+      }
+    },
+    [
+      loadProject,
+      setIsPlaying,
+      setTimeMs,
+      setSelectedBoatId,
+      setSelectedFlagId,
+    ],
+  );
 
   const getCanvasCenter = () => {
     const el = wrapRef.current;
@@ -277,6 +344,8 @@ export default function SailingAnimationBuilder() {
           selectedBoatId={selectedBoatId}
           onAddBoat={addBoat}
           onDeleteSelectedBoat={deleteSelectedBoat}
+          // optional: if you want a "Welcome" button in the header later:
+          // onShowWelcome={() => setShowWelcome(true)}
         />
       </div>
 
@@ -290,11 +359,12 @@ export default function SailingAnimationBuilder() {
               <canvas ref={canvasRef} className="h-full w-full" />
             </div>
           </div>
+
           <div>
             <AudioScrubberBar
               timeMs={timeMs}
               durationMs={durationMs}
-              scrubberStep={/* whatever you use, e.g. frameStepMs(fps) */ 50}
+              scrubberStep={50}
               onScrubTo={(t) => {
                 setIsPlaying(false);
                 setTimeMs(t);
@@ -315,6 +385,7 @@ export default function SailingAnimationBuilder() {
               setRipple={() => {}}
             />
           </div>
+
           {/* TIMELINE AREA */}
           <div className="shrink-0 border-t border-slate-200 bg-white">
             <div className="px-4 pb-3">
@@ -359,17 +430,21 @@ export default function SailingAnimationBuilder() {
             }
             course={
               <CoursePanel
+                marks={marks}
+                setMarks={setMarks}
                 wind={wind}
                 setWind={setWind}
+                startLine={startLine}
+                setStartLine={setStartLine}
+                boatsOptions={boatsOptions}
                 showStartLine={showStartLine}
                 setShowStartLine={setShowStartLine}
                 showMarks={showMarks}
                 setShowMarks={setShowMarks}
-                startLine={startLine}
-                setStartLine={setStartLine}
-                boatsOptions={boatsOptions}
-                marks={marks}
-                setMarks={setMarks}
+                showMarkThreeBL={showMarkThreeBL}
+                setShowMarkThreeBL={setShowMarkThreeBL}
+                showBoatTransomLines={showBoatTransomLines}
+                setShowBoatTransomLines={setShowBoatTransomLines}
               />
             }
             flags={
@@ -402,6 +477,15 @@ export default function SailingAnimationBuilder() {
           />
         </div>
       </div>
+
+      {/* ✅ WELCOME OVERLAY */}
+      <WelcomeOverlay
+        open={showWelcome}
+        dontShowAgain={dontShowWelcome}
+        onDontShowAgainChange={setDontShowWelcome}
+        onClose={() => setShowWelcome(false)}
+        onPickScenario={loadScenario}
+      />
     </div>
   );
 }
