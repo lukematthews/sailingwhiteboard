@@ -24,20 +24,32 @@ import {
   DEFAULT_MARKS,
   DEFAULT_START_LINE,
 } from "./canvas/defaults";
+
 import { interpolateBoatsAtTimeFromSteps } from "./animation/stepsInterpolate";
 
 import BuilderHeader from "./builder/BuilderHeader";
 import InspectorPanel from "./builder/InspectorPanel";
+import RightSidebar from "./builder/RightSidebar";
+import TimelinePanel from "./builder/TimelinePanel";
+
 import { ensureStartSteps } from "./builder/ensureStartSteps";
 import { useTimeline } from "./builder/useTimeline";
 import { useProjectIO } from "./builder/useProjectIO";
 import { useCanvasDraw } from "./builder/useCanvasDraw";
 import { useCanvasInteractions } from "./builder/useCanvasInteractions";
-import RightSidebar from "./builder/RightSidebar";
-import TimelinePanel from "./builder/TimelinePanel";
+import { useCanvasPanZoom } from "./builder/useCameraPanZoom";
+
 import AudioScrubberBar from "./components/dopesheet/AudioScrubberBar";
+
 import { WelcomeOverlay } from "./builder/WelcomeOverlay";
 import { getScenarioProjectFile, ScenarioKey } from "./builder/scenarios";
+
+import type { Camera } from "./builder/camera";
+
+import { hitTestBoat } from "./canvas/hitTest";
+import { hitTestMark } from "./canvas/marks";
+import { hitTestStartHandle } from "./canvas/startLine";
+import { hitTestFlag, resolveActiveFlagCode } from "./canvas/flags";
 
 const WELCOME_HIDE_KEY = "swb_welcome_hide";
 
@@ -45,7 +57,9 @@ export default function SailingAnimationBuilder() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  // --- timeline (moved to hook; identical behavior) ---
+  // ---------------------------------------------------------------------------
+  // Timeline
+  // ---------------------------------------------------------------------------
   const {
     durationMs,
     setDurationMs,
@@ -59,12 +73,23 @@ export default function SailingAnimationBuilder() {
     setPlaybackRate,
   } = useTimeline();
 
-  // (kept) other state
+  // ---------------------------------------------------------------------------
+  // Camera (Pan/Zoom)
+  // ---------------------------------------------------------------------------
+  const [camera, setCamera] = useState<Camera>({
+    x: 0,
+    y: 0,
+    zoom: 1,
+  });
+
+  // ---------------------------------------------------------------------------
+  // State
+  // ---------------------------------------------------------------------------
   const [autoKey] = useState<boolean>(true);
   const [segmentsByBoatId] = useState<SegmentsByBoatId>(() => ({}));
 
-  // redraw tick for async-loaded flag SVG assets
-  const [assetTick, setAssetTick] = useState<number>(0);
+  // asset tick for async SVG flags
+  const [assetTick, setAssetTick] = useState(0);
   useEffect(() => {
     const h = () => setAssetTick((t) => t + 1);
     window.addEventListener("flagassetloaded", h);
@@ -73,61 +98,77 @@ export default function SailingAnimationBuilder() {
 
   const [boats, setBoats] = useState<Boat[]>(() => DEFAULT_BOATS);
 
-  // keyframes (legacy)
   const [keyframesByBoatId, setKeyframesByBoatId] = useState<KeyframesByBoatId>(
     () => ({}),
   );
 
-  // steps (current)
   const [stepsByBoatId, setStepsByBoatId] = useState<StepsByBoatId>(() => ({}));
 
   useEffect(() => {
     setStepsByBoatId((prev) => ensureStartSteps(boats, prev));
   }, [boats]);
 
+  // ---------------------------------------------------------------------------
+  // Visibility toggles
+  // ---------------------------------------------------------------------------
   const [showStartLine, setShowStartLine] = useState(true);
   const [showMarks, setShowMarks] = useState(true);
   const [showMarkThreeBL, setShowMarkThreeBL] = useState(false);
   const [showBoatTransomLines, setShowBoatTransomLines] = useState(false);
 
-  // course
+  // ---------------------------------------------------------------------------
+  // Course
+  // ---------------------------------------------------------------------------
   const [marks, setMarks] = useState<Mark[]>(() => DEFAULT_MARKS);
-  const [wind, setWind] = useState<Wind>(() => ({ fromDeg: 0, speedKt: 15 }));
+  const [wind, setWind] = useState<Wind>(() => ({
+    fromDeg: 0,
+    speedKt: 15,
+  }));
+
   const [startLine, setStartLine] = useState<StartLine>(
     () => DEFAULT_START_LINE,
   );
 
-  // flags
+  // ---------------------------------------------------------------------------
+  // Flags
+  // ---------------------------------------------------------------------------
   const [flags, setFlags] = useState<Flag[]>([]);
   const [flagClipsByFlagId, setFlagClipsByFlagId] = useState<FlagClipsByFlagId>(
     () => ({}),
   );
+
   const [selectedFlagId, setSelectedFlagId] = useState<string | null>(null);
 
-  // selection + tool
+  // ---------------------------------------------------------------------------
+  // Selection + Tool
+  // ---------------------------------------------------------------------------
   const [selectedBoatId, setSelectedBoatId] = useState<string | null>(null);
   const [tool, setTool] = useState<ToolMode>("select");
-  const [snapToGrid, setSnapToGrid] = useState<boolean>(true);
+  const [snapToGrid, setSnapToGrid] = useState(true);
 
   const selectedBoat = useMemo(
     () => boats.find((b) => b.id === selectedBoatId) || null,
     [boats, selectedBoatId],
   );
 
-  const displayedBoats = useMemo(
-    () =>
-      interpolateBoatsAtTimeFromSteps(
-        boats,
-        stepsByBoatId,
-        segmentsByBoatId,
-        timeMs,
-      ),
-    [boats, stepsByBoatId, segmentsByBoatId, timeMs],
-  );
+  // ---------------------------------------------------------------------------
+  // Displayed boats (interpolated at playhead)
+  // ---------------------------------------------------------------------------
+  const displayedBoats = useMemo(() => {
+    return interpolateBoatsAtTimeFromSteps(
+      boats,
+      stepsByBoatId,
+      segmentsByBoatId,
+      timeMs,
+    );
+  }, [boats, stepsByBoatId, segmentsByBoatId, timeMs]);
 
-  // --- draw (moved to hook; identical behavior) ---
+  // ---------------------------------------------------------------------------
+  // Draw
+  // ---------------------------------------------------------------------------
   useCanvasDraw({
     canvasRef,
+    camera,
     boats,
     displayedBoats,
     stepsByBoatId,
@@ -150,9 +191,12 @@ export default function SailingAnimationBuilder() {
     assetTick,
   });
 
-  // --- pointer interactions (moved to hook; identical behavior) ---
+  // ---------------------------------------------------------------------------
+  // Interactions (boats/marks/startline/flags)
+  // ---------------------------------------------------------------------------
   useCanvasInteractions({
     canvasRef,
+    camera,
     autoKey,
     tool,
     snapToGrid,
@@ -175,10 +219,73 @@ export default function SailingAnimationBuilder() {
     setSelectedFlagId,
   });
 
-  // --- import/export (moved to hook; identical behavior) ---
+  // ---------------------------------------------------------------------------
+  // Pan only on EMPTY SPACE (whiteboard style)
+  // ---------------------------------------------------------------------------
+
+  const displayedBoatsRef = useRef(displayedBoats);
+  const marksRef = useRef(marks);
+  const flagsRef = useRef(flags);
+  const timeRef = useRef(timeMs);
+
+  useEffect(
+    () => void (displayedBoatsRef.current = displayedBoats),
+    [displayedBoats],
+  );
+  useEffect(() => void (marksRef.current = marks), [marks]);
+  useEffect(() => void (flagsRef.current = flags), [flags]);
+  useEffect(() => void (timeRef.current = timeMs), [timeMs]);
+
+  const shouldStartPan = useCallback(
+    (pWorld: { x: number; y: number }) => {
+      // ❌ boats
+      for (const b of displayedBoatsRef.current) {
+        if (hitTestBoat(pWorld.x, pWorld.y, b)) return false;
+      }
+
+      // ❌ marks
+      if (showMarks) {
+        for (const m of marksRef.current) {
+          if (hitTestMark(pWorld.x, pWorld.y, m)) return false;
+        }
+      }
+
+      // ❌ start line handles
+      if (showStartLine) {
+        if (hitTestStartHandle(pWorld.x, pWorld.y, startLine)) return false;
+      }
+
+      // ❌ flags
+      for (const f of flagsRef.current) {
+        const codeNow = resolveActiveFlagCode(
+          f,
+          flagClipsByFlagId[f.id],
+          timeRef.current,
+        );
+        if (!codeNow) continue;
+
+        if (hitTestFlag(pWorld.x, pWorld.y, f)) return false;
+      }
+
+      // ✅ empty space
+      return true;
+    },
+    [showMarks, showStartLine, startLine, flagClipsByFlagId],
+  );
+
+  useCanvasPanZoom({
+    canvasRef,
+    camera,
+    setCamera,
+    shouldStartPan,
+  });
+
+  // ---------------------------------------------------------------------------
+  // Import / Export
+  // ---------------------------------------------------------------------------
   const [exportText, setExportText] = useState("");
 
-  const { exportProject, importProject, loadProject } = useProjectIO({
+  const { loadProject } = useProjectIO({
     durationMs,
     fps,
     boats,
@@ -211,9 +318,9 @@ export default function SailingAnimationBuilder() {
   });
 
   // ---------------------------------------------------------------------------
-  // ✅ Welcome overlay state (localStorage)
+  // Welcome Overlay
   // ---------------------------------------------------------------------------
-  const [dontShowWelcome, setDontShowWelcome] = useState<boolean>(() => {
+  const [dontShowWelcome, setDontShowWelcome] = useState(() => {
     try {
       return localStorage.getItem(WELCOME_HIDE_KEY) === "1";
     } catch {
@@ -221,7 +328,7 @@ export default function SailingAnimationBuilder() {
     }
   });
 
-  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
+  const [showWelcome, setShowWelcome] = useState(() => {
     try {
       return localStorage.getItem(WELCOME_HIDE_KEY) !== "1";
     } catch {
@@ -238,31 +345,23 @@ export default function SailingAnimationBuilder() {
   const loadScenario = useCallback(
     (key: ScenarioKey) => {
       setShowWelcome(false);
-
-      // Always start scenarios paused at t=0.
       setIsPlaying(false);
       setTimeMs(0);
 
       const project = getScenarioProjectFile(key);
-
-      // ✅ no JSON, no parsing, no mismatch
       loadProject(project);
 
-      // Optional: blank should start with nothing selected
       if (key === "blank") {
         setSelectedBoatId(null);
         setSelectedFlagId(null);
       }
     },
-    [
-      loadProject,
-      setIsPlaying,
-      setSelectedBoatId,
-      setSelectedFlagId,
-      setTimeMs,
-    ],
+    [loadProject, setIsPlaying, setTimeMs],
   );
 
+  // ---------------------------------------------------------------------------
+  // Boat CRUD
+  // ---------------------------------------------------------------------------
   const getCanvasCenter = () => {
     const el = wrapRef.current;
     if (!el) return { x: 500, y: 250 };
@@ -272,18 +371,20 @@ export default function SailingAnimationBuilder() {
 
   const addBoat = () => {
     const id = uid();
-    const center = getCanvasCenter();
+    const c = getCanvasCenter();
+
     setBoats((prev) => [
       ...prev,
       {
         id,
         label: `Boat ${prev.length + 1}`,
         color: "#22c55e",
-        x: center.x + 30 * (prev.length % 3),
-        y: center.y + 30 * (prev.length % 3),
+        x: c.x,
+        y: c.y,
         headingDeg: 0,
       },
     ]);
+
     setSelectedBoatId(id);
   };
 
@@ -291,24 +392,6 @@ export default function SailingAnimationBuilder() {
     if (!selectedBoatId) return;
 
     setBoats((prev) => prev.filter((b) => b.id !== selectedBoatId));
-
-    setKeyframesByBoatId((prev) => {
-      const next = { ...prev };
-      delete next[selectedBoatId];
-      return next;
-    });
-
-    setStepsByBoatId((prev) => {
-      const next = { ...prev };
-      delete next[selectedBoatId];
-      return next;
-    });
-
-    setStartLine((s) => ({
-      ...s,
-      startBoatId: s.startBoatId === selectedBoatId ? null : s.startBoatId,
-    }));
-
     setSelectedBoatId(null);
   };
 
@@ -320,9 +403,8 @@ export default function SailingAnimationBuilder() {
   };
 
   const displayedForInspector = useMemo(() => {
-    return selectedBoatId
-      ? displayedBoats.find((b) => b.id === selectedBoatId) || null
-      : null;
+    if (!selectedBoatId) return null;
+    return displayedBoats.find((b) => b.id === selectedBoatId) || null;
   }, [displayedBoats, selectedBoatId]);
 
   const boatsOptions = useMemo(
@@ -330,6 +412,9 @@ export default function SailingAnimationBuilder() {
     [boats],
   );
 
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
   return (
     <div className="h-screen w-screen overflow-hidden bg-slate-100 flex flex-col">
       {/* HEADER */}
@@ -342,14 +427,12 @@ export default function SailingAnimationBuilder() {
           selectedBoatId={selectedBoatId}
           onAddBoat={addBoat}
           onDeleteSelectedBoat={deleteSelectedBoat}
-          // optional: if you want a "Welcome" button in the header later:
-          // onShowWelcome={() => setShowWelcome(true)}
         />
       </div>
 
-      {/* MAIN AREA */}
+      {/* MAIN */}
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT SIDE (Canvas + Timeline) */}
+        {/* LEFT */}
         <div className="flex flex-1 flex-col overflow-hidden">
           {/* CANVAS */}
           <div className="relative flex-1 bg-white">
@@ -358,31 +441,30 @@ export default function SailingAnimationBuilder() {
             </div>
           </div>
 
-          <div>
-            <AudioScrubberBar
-              timeMs={timeMs}
-              durationMs={durationMs}
-              scrubberStep={50}
-              onScrubTo={(t) => {
-                setIsPlaying(false);
-                setTimeMs(t);
-              }}
-              onJumpStart={() => {
-                setIsPlaying(false);
-                setTimeMs(0);
-              }}
-              onTogglePlay={() => setIsPlaying((p) => !p)}
-              onJumpEnd={() => {
-                setIsPlaying(false);
-                setTimeMs(durationMs);
-              }}
-              isPlaying={isPlaying}
-              playbackRate={playbackRate}
-              setPlaybackRate={setPlaybackRate}
-            />
-          </div>
-
-          {/* TIMELINE AREA */}
+          {/* SCRUB */}
+          <AudioScrubberBar
+            timeMs={timeMs}
+            durationMs={durationMs}
+            scrubberStep={50}
+            onScrubTo={(t) => {
+              setIsPlaying(false);
+              setTimeMs(t);
+            }}
+            onJumpStart={() => {
+              setIsPlaying(false);
+              setTimeMs(0);
+            }}
+            onTogglePlay={() => setIsPlaying((p) => !p)}
+            onJumpEnd={() => {
+              setIsPlaying(false);
+              setTimeMs(durationMs);
+            }}
+            isPlaying={isPlaying}
+            playbackRate={playbackRate}
+            setPlaybackRate={setPlaybackRate}
+          />
+          
+          {/* TIMELINE */}
           <div className="shrink-0 border-t border-slate-200 bg-white">
             <div className="px-4 pb-3">
               <StepsDopeSheet
@@ -398,7 +480,6 @@ export default function SailingAnimationBuilder() {
                 setTimeMs={setTimeMs}
                 setIsPlaying={setIsPlaying}
                 isPlaying={isPlaying}
-                onPlaybackRateChange={(r) => setPlaybackRate(r)}
                 flags={flags}
                 flagClipsByFlagId={flagClipsByFlagId}
                 setFlagClipsByFlagId={setFlagClipsByFlagId}
@@ -474,7 +555,7 @@ export default function SailingAnimationBuilder() {
         </div>
       </div>
 
-      {/* ✅ WELCOME OVERLAY */}
+      {/* WELCOME */}
       <WelcomeOverlay
         open={showWelcome}
         dontShowAgain={dontShowWelcome}

@@ -21,9 +21,11 @@ import type {
 } from "../types";
 import { findClosestStepIndex, frameStepMs, sortSteps } from "./utilSteps";
 import { drawStepBadge } from "./drawStepBadge";
+import type { Camera } from "./camera";
 
 type Args = {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
+  camera: Camera;
   boats: Boat[];
   displayedBoats: Boat[];
   stepsByBoatId: StepsByBoatId;
@@ -32,8 +34,6 @@ type Args = {
   durationMs: number;
   fps: number;
   selectedBoatId: string | null;
-
-  // ✅ NEW: hide selection while playing
   isPlaying: boolean;
 
   wind: Wind;
@@ -55,6 +55,7 @@ type Args = {
 export function useCanvasDraw(args: Args) {
   const {
     canvasRef,
+    camera,
     boats,
     displayedBoats,
     stepsByBoatId,
@@ -84,6 +85,9 @@ export function useCanvasDraw(args: Args) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // ============================================================
+    // Canvas sizing (DPR-safe)
+    // ============================================================
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
 
@@ -95,20 +99,42 @@ export function useCanvasDraw(args: Args) {
       canvas.height = h;
     }
 
+    // Reset transform → CSS pixel space
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    drawGrid(ctx, rect.width, rect.height);
+    // Clear full canvas in CSS coords
+    ctx.clearRect(0, 0, rect.width, rect.height);
 
-    // behind boats
+    // ============================================================
+    // ✅ CAMERA TRANSFORM (world space begins here)
+    // ============================================================
+    ctx.save();
+    ctx.translate(camera.x, camera.y);
+    ctx.scale(camera.zoom, camera.zoom);
+
+    // ============================================================
+    // WORLD CONTENT (boats, marks, flags, tracks)
+    // ============================================================
+
+    // Grid is world-space now (will zoom/pan correctly)
+    drawGrid(ctx, rect.width, rect.height, camera);
+
+    // Wind indicator is world-space for now
     drawWind(ctx, wind, { x: 90, y: 70 });
 
     if (showStartLine) drawStartLine(ctx, startLine);
 
     if (showMarks) {
-      for (const m of marks) drawMark(ctx, m, { showThreeBoatLengthCircle: showMarkThreeBL });
+      for (const m of marks) {
+        drawMark(ctx, m, {
+          showThreeBoatLengthCircle: showMarkThreeBL,
+        });
+      }
     }
 
-    // tracks
+    // ------------------------------------------------------------
+    // Tracks
+    // ------------------------------------------------------------
     ctx.save();
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 6]);
@@ -120,13 +146,18 @@ export function useCanvasDraw(args: Args) {
       if (pts.length < 2) continue;
 
       ctx.beginPath();
-      pts.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
+      pts.forEach((pt, i) =>
+        i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y),
+      );
+
       ctx.strokeStyle = "rgba(0,0,0,0.18)";
       ctx.stroke();
     }
     ctx.restore();
 
-    // ghosts
+    // ------------------------------------------------------------
+    // Ghost boats (step previews)
+    // ------------------------------------------------------------
     const snappedNow = snapTime(timeMs, fps);
     const frame = frameStepMs(fps);
 
@@ -157,7 +188,11 @@ export function useCanvasDraw(args: Args) {
 
         drawBoat(
           ctx,
-          { ...poseAtStep, label: "", color: isClosest ? b.color : "#94a3b8" },
+          {
+            ...poseAtStep,
+            label: "",
+            color: isClosest ? b.color : "#94a3b8",
+          },
           { showTransomOverlap: showBoatTransomLines },
         );
 
@@ -168,11 +203,13 @@ export function useCanvasDraw(args: Args) {
       }
     }
 
-    // current boats
+    // ------------------------------------------------------------
+    // Current boats
+    // ------------------------------------------------------------
     for (const b of displayedBoats) {
       drawBoat(ctx, b, { showTransomOverlap: showBoatTransomLines });
 
-      // ✅ Hide selection ring while playing
+      // Hide selection ring while playing
       if (!isPlaying && b.id === selectedBoatId) {
         ctx.save();
         ctx.beginPath();
@@ -185,22 +222,36 @@ export function useCanvasDraw(args: Args) {
       }
     }
 
-    // flags overlay
+    // ------------------------------------------------------------
+    // Flags
+    // ------------------------------------------------------------
     for (const f of flags) {
       const code = resolveActiveFlagCode(f, flagClipsByFlagId[f.id], timeMs);
       if (!code) continue;
       drawFlag(ctx, f, code, selectedFlagId === f.id);
     }
 
-    // time indicator
+    // ============================================================
+    // END CAMERA TRANSFORM
+    // ============================================================
+    ctx.restore();
+
+    // ============================================================
+    // UI OVERLAY (screen-space only)
+    // ============================================================
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.7)";
     ctx.font = "12px ui-sans-serif, system-ui";
     ctx.textAlign = "left";
-    ctx.fillText(`t = ${formatTime(timeMs)} / ${formatTime(durationMs)}`, 12, 18);
+    ctx.fillText(
+      `t = ${formatTime(timeMs)} / ${formatTime(durationMs)}`,
+      12,
+      18,
+    );
     ctx.restore();
   }, [
     canvasRef,
+    camera,
     boats,
     displayedBoats,
     stepsByBoatId,

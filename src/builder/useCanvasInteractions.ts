@@ -15,9 +15,14 @@ import { hitTestBoat } from "../canvas/hitTest";
 import { hitTestMark } from "../canvas/marks";
 import { hitTestStartHandle } from "../canvas/startLine";
 import { hitTestFlag, resolveActiveFlagCode } from "../canvas/flags";
+import type { Camera } from "./camera";
+import { screenToWorld } from "./camera";
 
 type Args = {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
+
+  // ✅ camera
+  camera: Camera;
 
   // state (inputs)
   autoKey: boolean; // kept to mirror your existing dep pattern
@@ -53,6 +58,7 @@ type Args = {
 export function useCanvasInteractions(args: Args) {
   const {
     canvasRef,
+    camera,
     autoKey,
     tool,
     snapToGrid,
@@ -79,6 +85,7 @@ export function useCanvasInteractions(args: Args) {
   } = args;
 
   // refs to avoid stale closures in pointer handlers
+  const cameraRef = useRef<Camera>(camera);
   const toolRef = useRef<ToolMode>(tool);
   const snapRef = useRef<boolean>(snapToGrid);
   const timeRef = useRef<number>(timeMs);
@@ -98,16 +105,23 @@ export function useCanvasInteractions(args: Args) {
   const flagClipsRef = useRef<FlagClipsByFlagId>(flagClipsByFlagId);
   const displayedBoatsRef = useRef<Boat[]>(displayedBoats);
 
+  useEffect(() => void (cameraRef.current = camera), [camera]);
   useEffect(() => void (toolRef.current = tool), [tool]);
   useEffect(() => void (snapRef.current = snapToGrid), [snapToGrid]);
   useEffect(() => void (timeRef.current = timeMs), [timeMs]);
   useEffect(() => void (fpsRef.current = fps), [fps]);
 
   useEffect(() => void (isPlayingRef.current = isPlaying), [isPlaying]);
-  useEffect(() => void (setIsPlayingRef.current = setIsPlaying), [setIsPlaying]);
+  useEffect(
+    () => void (setIsPlayingRef.current = setIsPlaying),
+    [setIsPlaying],
+  );
 
   useEffect(() => void (showMarksRef.current = showMarks), [showMarks]);
-  useEffect(() => void (showStartLineRef.current = showStartLine), [showStartLine]);
+  useEffect(
+    () => void (showStartLineRef.current = showStartLine),
+    [showStartLine],
+  );
 
   useEffect(() => void (marksRef.current = marks), [marks]);
   useEffect(() => void (startLineRef.current = startLine), [startLine]);
@@ -116,11 +130,18 @@ export function useCanvasInteractions(args: Args) {
     () => void (flagClipsRef.current = flagClipsByFlagId),
     [flagClipsByFlagId],
   );
-  useEffect(() => void (displayedBoatsRef.current = displayedBoats), [displayedBoats]);
+  useEffect(
+    () => void (displayedBoatsRef.current = displayedBoats),
+    [displayedBoats],
+  );
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
+    // ✅ Prevent browser touch gestures (pinch-to-zoom / scroll) on canvas
+    // Pan/zoom hook + our pointer interactions assume full control.
+    canvas.style.touchAction = "none";
 
     type DragMode =
       | { kind: "flag"; flagId: string; dragOffset: { x: number; y: number } }
@@ -136,9 +157,16 @@ export function useCanvasInteractions(args: Args) {
 
     let active: DragMode = null;
 
-    const getPoint = (e: PointerEvent) => {
+    // Screen point in canvas CSS pixels
+    const getScreenPoint = (e: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    };
+
+    // ✅ World point (after camera)
+    const getWorldPoint = (e: PointerEvent) => {
+      const pScreen = getScreenPoint(e);
+      return screenToWorld(pScreen, cameraRef.current);
     };
 
     const pauseIfPlaying = () => {
@@ -157,7 +185,12 @@ export function useCanvasInteractions(args: Args) {
     };
 
     const onDown = (e: PointerEvent) => {
-      const p = getPoint(e);
+      // If you’re using middle mouse / space+drag for pan in useCanvasPanZoom,
+      // don’t steal those pointerdowns here.
+      // (Pan hook calls preventDefault & capture; this guard is extra safety.)
+      if (e.button === 1) return;
+
+      const p = getWorldPoint(e);
 
       // ------------------------------------------------------------
       // start line handles (ONLY if visible)
@@ -293,7 +326,7 @@ export function useCanvasInteractions(args: Args) {
         return;
       }
 
-      const p = getPoint(e);
+      const p = getWorldPoint(e);
 
       if (active.kind === "start") {
         const handle = active.handle;
@@ -369,7 +402,9 @@ export function useCanvasInteractions(args: Args) {
             ny = Math.round(ny / s) * s;
           }
 
-          setStepsByBoatId((prev) => upsertStep(prev, boatId, nowT, { x: nx, y: ny }));
+          setStepsByBoatId((prev) =>
+            upsertStep(prev, boatId, nowT, { x: nx, y: ny }),
+          );
           e.preventDefault();
           return;
         }
@@ -415,6 +450,7 @@ export function useCanvasInteractions(args: Args) {
     };
   }, [
     canvasRef,
+    camera, // keep cameraRef current (ref updated in effect above)
     setFlags,
     setMarks,
     setStartLine,
@@ -426,7 +462,5 @@ export function useCanvasInteractions(args: Args) {
     // keep pauseIfPlaying correct
     isPlaying,
     setIsPlaying,
-
-    // NOTE: showMarks/showStartLine are handled via refs; no need here
   ]);
 }

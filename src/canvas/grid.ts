@@ -1,37 +1,53 @@
-export function drawGrid(ctx: CanvasRenderingContext2D, w: number, h: number) {
+// src/canvas/grid.ts
+import type { Camera } from "../builder/camera";
+
+export function drawGrid(
+  ctx: CanvasRenderingContext2D,
+  canvasWidth: number,
+  canvasHeight: number,
+  camera: Camera,
+) {
+  const { x, y, zoom } = camera;
+
+  // Visible world bounds
+  const worldLeft = -x / zoom;
+  const worldTop = -y / zoom;
+  const worldRight = worldLeft + canvasWidth / zoom;
+  const worldBottom = worldTop + canvasHeight / zoom;
+
+  // Base grid spacing in world units
+  const baseSpacing = 50;
+
+  // Optional: scale spacing so grid doesn’t get too dense when zoomed out
+  let spacing = baseSpacing;
+  if (zoom < 0.5) spacing = 100;
+  if (zoom < 0.25) spacing = 200;
+
+  const startX = Math.floor(worldLeft / spacing) * spacing;
+  const endX = Math.ceil(worldRight / spacing) * spacing;
+
+  const startY = Math.floor(worldTop / spacing) * spacing;
+  const endY = Math.ceil(worldBottom / spacing) * spacing;
+
   ctx.save();
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, w, h);
+  ctx.lineWidth = 1 / zoom;
+  ctx.strokeStyle = "rgba(0,0,0,0.08)";
 
-  const minor = 25;
-  const major = 100;
-
-  for (let x = 0; x <= w; x += minor) {
+  // Vertical lines
+  for (let x = startX; x <= endX; x += spacing) {
     ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, h);
-    ctx.strokeStyle = x % major === 0 ? "rgba(0,0,0,0.12)" : "rgba(0,0,0,0.06)";
-    ctx.lineWidth = x % major === 0 ? 1.5 : 1;
+    ctx.moveTo(x, worldTop);
+    ctx.lineTo(x, worldBottom);
     ctx.stroke();
   }
 
-  for (let y = 0; y <= h; y += minor) {
+  // Horizontal lines
+  for (let y = startY; y <= endY; y += spacing) {
     ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.strokeStyle = y % major === 0 ? "rgba(0,0,0,0.12)" : "rgba(0,0,0,0.06)";
-    ctx.lineWidth = y % major === 0 ? 1.5 : 1;
+    ctx.moveTo(worldLeft, y);
+    ctx.lineTo(worldRight, y);
     ctx.stroke();
   }
-
-  ctx.beginPath();
-  ctx.moveTo(w / 2 - 10, h / 2);
-  ctx.lineTo(w / 2 + 10, h / 2);
-  ctx.moveTo(w / 2, h / 2 - 10);
-  ctx.lineTo(w / 2, h / 2 + 10);
-  ctx.strokeStyle = "rgba(0,0,0,0.25)";
-  ctx.lineWidth = 2;
-  ctx.stroke();
 
   ctx.restore();
 }
