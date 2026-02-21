@@ -1,4 +1,4 @@
-// src/builder/useCanvasPanZoom.ts
+// src/builder/useCameraPanZoom.ts
 import { useEffect, useRef } from "react";
 import type { Camera } from "./camera";
 import { screenToWorld } from "./camera";
@@ -12,7 +12,7 @@ type Args = {
 
   /**
    * Return true if a left-drag should start panning from this point.
-   * This is called on pointerdown with a WORLD point (camera applied).
+   * Called on pointerdown with a WORLD point (camera applied).
    *
    * Typical usage:
    *   shouldStartPan: (pWorld) => !isOverAnyObject(pWorld)
@@ -36,6 +36,19 @@ function midpoint(a: Point, b: Point): Point {
   return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
+/**
+ * Mobile-first camera controls:
+ * - 1 finger: pan
+ * - 2 fingers: pinch zoom anchored + pan (maps-like)
+ * Desktop:
+ * - wheel: zoom-to-cursor
+ * - middle mouse OR space+left: pan
+ * - optional: left drag pan when shouldStartPan(worldPoint) === true
+ *
+ * NOTE: object dragging on touch (long-press) marks a pointer id on the canvas:
+ *   (canvas as any).__swbTouchEntityDragPointerId = <id>
+ * When present, we do not pan/zoom with that pointer.
+ */
 export function useCanvasPanZoom({
   canvasRef,
   camera,
@@ -49,7 +62,7 @@ export function useCanvasPanZoom({
   const camRef = useRef(camera);
   useEffect(() => void (camRef.current = camera), [camera]);
 
-  // Spacebar pan support
+  // Spacebar pan support (desktop)
   const spaceDownRef = useRef(false);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -69,6 +82,9 @@ export function useCanvasPanZoom({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || !enabled) return;
+
+    // We want full control over touch gestures.
+    canvas.style.touchAction = "none";
 
     const getScreenPoint = (e: PointerEvent | WheelEvent): Point => {
       const rect = canvas.getBoundingClientRect();
@@ -113,7 +129,7 @@ export function useCanvasPanZoom({
     let camStart: Point = { x: 0, y: 0 };
 
     const shouldStartPanForPointerDown = (e: PointerEvent) => {
-      // Touch panning handled separately (two-finger)
+      // Touch panning handled separately below
       if (e.pointerType === "touch") return false;
 
       const isMiddle = e.button === 1;
@@ -171,23 +187,38 @@ export function useCanvasPanZoom({
     canvas.addEventListener("pointercancel", onPointerUp);
 
     // ---------------------------------------------------------------------
-    // Mobile pinch + two-finger pan (pointer events)
-    // - only acts when 2+ touch pointers are active
-    // - prevents page scroll while pinching
+    // Mobile pan + pinch (pointer events)
+    // - 1 finger: pan
+    // - 2 fingers: pinch anchored + pan via midpoint
     // ---------------------------------------------------------------------
     const activeTouches = new Map<number, Point>();
+
+    let singlePanPointerId: number | null = null;
+    let singlePanLast: Point = { x: 0, y: 0 };
 
     let pinchStartDist = 0;
     let pinchStartZoom = 1;
     let pinchStartCam: Point = { x: 0, y: 0 };
     let pinchStartMid: Point = { x: 0, y: 0 };
 
+    const isTouchDragPointer = (pointerId: number) => {
+      return (canvas as any).__swbTouchEntityDragPointerId === pointerId;
+    };
+
     const onTouchPointerDown = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
+      if (isTouchDragPointer(e.pointerId)) return;
 
       const p = getScreenPoint(e);
       activeTouches.set(e.pointerId, p);
 
+      if (activeTouches.size === 1) {
+        singlePanPointerId = e.pointerId;
+        singlePanLast = p;
+        return;
+      }
+
+      // When the second finger comes down, start pinch state
       if (activeTouches.size === 2) {
         const pts = Array.from(activeTouches.values());
         const a = pts[0];
@@ -197,19 +228,34 @@ export function useCanvasPanZoom({
         pinchStartZoom = camRef.current.zoom;
         pinchStartCam = { x: camRef.current.x, y: camRef.current.y };
         pinchStartMid = midpoint(a, b);
+
+        // disable single pan once pinching
+        singlePanPointerId = null;
       }
     };
 
     const onTouchPointerMove = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
       if (!activeTouches.has(e.pointerId)) return;
+      if (isTouchDragPointer(e.pointerId)) return;
 
       const p = getScreenPoint(e);
       activeTouches.set(e.pointerId, p);
 
+      // 1 finger pan
+      if (activeTouches.size === 1 && e.pointerId === singlePanPointerId) {
+        e.preventDefault();
+        const dx = p.x - singlePanLast.x;
+        const dy = p.y - singlePanLast.y;
+        singlePanLast = p;
+
+        setCamera((c) => ({ ...c, x: c.x + dx, y: c.y + dy }));
+        return;
+      }
+
+      // 2+ touch pinch/pan
       if (activeTouches.size < 2) return;
 
-      // block page scroll / rubber band while pinching
       e.preventDefault();
 
       const pts = Array.from(activeTouches.values());
@@ -239,7 +285,21 @@ export function useCanvasPanZoom({
 
     const onTouchPointerUp = (e: PointerEvent) => {
       if (e.pointerType !== "touch") return;
+
       activeTouches.delete(e.pointerId);
+
+      if (e.pointerId === singlePanPointerId) {
+        singlePanPointerId = null;
+      }
+
+      if (activeTouches.size === 1) {
+        // reset single pan tracking to remaining pointer
+        const [id, pt] = Array.from(activeTouches.entries())[0];
+        if (!isTouchDragPointer(id)) {
+          singlePanPointerId = id;
+          singlePanLast = pt;
+        }
+      }
 
       if (activeTouches.size < 2) {
         pinchStartDist = 0;
@@ -269,10 +329,10 @@ export function useCanvasPanZoom({
   }, [
     canvasRef,
     enabled,
-    maxZoom,
     minZoom,
+    maxZoom,
+    wheelZoomSpeed,
     setCamera,
     shouldStartPan,
-    wheelZoomSpeed,
   ]);
 }

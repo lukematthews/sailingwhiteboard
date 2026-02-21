@@ -41,6 +41,13 @@ import { useCanvasPanZoom } from "./builder/useCameraPanZoom";
 
 import AudioScrubberBar from "./components/dopesheet/AudioScrubberBar";
 
+import { useIsMobile } from "./builder/useIsMobile";
+import { MobileShell, type DrawerState } from "./builder/MobileShell";
+import { MobileTopBar } from "./builder/MobileTopBar";
+import { MobileDrawerCollapsed } from "./builder/MobileDrawerCollapsed";
+import { MobileDrawerTabs } from "./builder/MobileDrawerTabs";
+import { MobileStepsList } from "./builder/MobileStepsList";
+
 import { WelcomeOverlay } from "./builder/WelcomeOverlay";
 import { getScenarioProjectFile, ScenarioKey } from "./builder/scenarios";
 
@@ -145,6 +152,9 @@ export default function SailingAnimationBuilder() {
   const [selectedBoatId, setSelectedBoatId] = useState<string | null>(null);
   const [tool, setTool] = useState<ToolMode>("select");
   const [snapToGrid, setSnapToGrid] = useState(true);
+
+  const isMobile = useIsMobile(900);
+  const [drawerState, setDrawerState] = useState<DrawerState>("collapsed");
 
   const selectedBoat = useMemo(
     () => boats.find((b) => b.id === selectedBoatId) || null,
@@ -416,144 +426,279 @@ export default function SailingAnimationBuilder() {
   // Render
   // ---------------------------------------------------------------------------
   return (
-    <div className="h-screen w-screen overflow-hidden bg-slate-100 flex flex-col">
-      {/* HEADER */}
-      <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3">
-        <BuilderHeader
-          tool={tool}
-          setTool={setTool}
-          snapToGrid={snapToGrid}
-          setSnapToGrid={setSnapToGrid}
-          selectedBoatId={selectedBoatId}
-          onAddBoat={addBoat}
-          onDeleteSelectedBoat={deleteSelectedBoat}
+    <>
+      {isMobile ? (
+        <MobileShell
+          drawerState={drawerState}
+          setDrawerState={setDrawerState}
+          canvas={
+            <div className="absolute inset-0 bg-white">
+              <div ref={wrapRef} className="absolute inset-0">
+                <canvas ref={canvasRef} className="h-full w-full" />
+              </div>
+            </div>
+          }
+          topBar={
+            <MobileTopBar
+              onAddBoat={() => {
+                addBoat();
+                setDrawerState((s) => (s === "collapsed" ? "peek" : s));
+              }}
+              onOpenPanels={() => setDrawerState("full")}
+            />
+          }
+          drawerCollapsed={
+            <MobileDrawerCollapsed
+              timeMs={timeMs}
+              durationMs={durationMs}
+              isPlaying={isPlaying}
+              playbackRate={playbackRate}
+              setPlaybackRate={setPlaybackRate}
+              onScrubTo={(t) => {
+                setIsPlaying(false);
+                setTimeMs(t);
+              }}
+              onJumpStart={() => {
+                setIsPlaying(false);
+                setTimeMs(0);
+              }}
+              onTogglePlay={() => setIsPlaying((p) => !p)}
+              onJumpEnd={() => {
+                setIsPlaying(false);
+                setTimeMs(durationMs);
+              }}
+            />
+          }
+          drawerContent={
+            <MobileDrawerTabs
+              defaultTab="steps"
+              steps={
+                <MobileStepsList
+                  boats={boats}
+                  selectedBoatId={selectedBoatId}
+                  setSelectedBoatId={setSelectedBoatId}
+                  steps={
+                    selectedBoatId ? stepsByBoatId[selectedBoatId] || [] : []
+                  }
+                  displayedBoat={displayedForInspector}
+                  timeMs={timeMs}
+                  fps={fps}
+                  isPlaying={isPlaying}
+                  setIsPlaying={setIsPlaying}
+                  setTimeMs={setTimeMs}
+                  setStepsByBoatId={setStepsByBoatId}
+                />
+              }
+              inspector={
+                <div className="px-3 pb-3">
+                  <InspectorPanel
+                    selectedBoatId={selectedBoatId}
+                    selectedBoat={selectedBoat}
+                    onUpdateSelectedBoat={updateSelectedBoat}
+                    displayedForInspector={displayedForInspector}
+                    stepsCountForSelectedBoat={
+                      selectedBoatId
+                        ? (stepsByBoatId[selectedBoatId] || []).length
+                        : 0
+                    }
+                    exportText={exportText}
+                    setExportText={setExportText}
+                  />
+                </div>
+              }
+              course={
+                <div className="px-3 pb-3">
+                  <CoursePanel
+                    marks={marks}
+                    setMarks={setMarks}
+                    wind={wind}
+                    setWind={setWind}
+                    startLine={startLine}
+                    setStartLine={setStartLine}
+                    boatsOptions={boatsOptions}
+                    showStartLine={showStartLine}
+                    setShowStartLine={setShowStartLine}
+                    showMarks={showMarks}
+                    setShowMarks={setShowMarks}
+                    showMarkThreeBL={showMarkThreeBL}
+                    setShowMarkThreeBL={setShowMarkThreeBL}
+                    showBoatTransomLines={showBoatTransomLines}
+                    setShowBoatTransomLines={setShowBoatTransomLines}
+                  />
+                </div>
+              }
+              flags={
+                <div className="px-3 pb-3">
+                  <FlagsPanel
+                    flags={flags}
+                    setFlags={setFlags}
+                    flagClipsByFlagId={flagClipsByFlagId}
+                    setFlagClipsByFlagId={setFlagClipsByFlagId}
+                    selectedFlagId={selectedFlagId}
+                    setSelectedFlagId={setSelectedFlagId}
+                    timeMs={timeMs}
+                    durationMs={durationMs}
+                  />
+                </div>
+              }
+              timeline={
+                <div className="px-3 pb-3">
+                  <TimelinePanel
+                    durationMs={durationMs}
+                    setDurationMs={setDurationMs}
+                    fps={fps}
+                    setFps={setFps}
+                    timeMs={timeMs}
+                    setTimeMs={setTimeMs}
+                    isPlaying={isPlaying}
+                    setIsPlaying={setIsPlaying}
+                  />
+                </div>
+              }
+            />
+          }
         />
-      </div>
-
-      {/* MAIN */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* LEFT */}
-        <div className="flex flex-1 flex-col overflow-hidden">
-          {/* CANVAS */}
-          <div className="relative flex-1 bg-white">
-            <div ref={wrapRef} className="absolute inset-0">
-              <canvas ref={canvasRef} className="h-full w-full" />
-            </div>
+      ) : (
+        <div className="h-screen w-screen overflow-hidden bg-slate-100 flex flex-col">
+          {/* HEADER */}
+          <div className="shrink-0 border-b border-slate-200 bg-white px-4 py-3">
+            <BuilderHeader
+              tool={tool}
+              setTool={setTool}
+              snapToGrid={snapToGrid}
+              setSnapToGrid={setSnapToGrid}
+              selectedBoatId={selectedBoatId}
+              onAddBoat={addBoat}
+              onDeleteSelectedBoat={deleteSelectedBoat}
+            />
           </div>
 
-          {/* SCRUB */}
-          <AudioScrubberBar
-            timeMs={timeMs}
-            durationMs={durationMs}
-            scrubberStep={50}
-            onScrubTo={(t) => {
-              setIsPlaying(false);
-              setTimeMs(t);
-            }}
-            onJumpStart={() => {
-              setIsPlaying(false);
-              setTimeMs(0);
-            }}
-            onTogglePlay={() => setIsPlaying((p) => !p)}
-            onJumpEnd={() => {
-              setIsPlaying(false);
-              setTimeMs(durationMs);
-            }}
-            isPlaying={isPlaying}
-            playbackRate={playbackRate}
-            setPlaybackRate={setPlaybackRate}
-          />
-          
-          {/* TIMELINE */}
-          <div className="shrink-0 border-t border-slate-200 bg-white">
-            <div className="px-4 pb-3">
-              <StepsDopeSheet
-                boats={boats}
-                stepsByBoatId={stepsByBoatId}
-                setStepsByBoatId={setStepsByBoatId}
-                displayedBoats={displayedBoats}
-                timeMs={timeMs}
-                durationMs={durationMs}
-                fps={fps}
-                selectedBoatId={selectedBoatId}
-                setSelectedBoatId={setSelectedBoatId}
-                setTimeMs={setTimeMs}
-                setIsPlaying={setIsPlaying}
-                isPlaying={isPlaying}
-                flags={flags}
-                flagClipsByFlagId={flagClipsByFlagId}
-                setFlagClipsByFlagId={setFlagClipsByFlagId}
-                selectedFlagId={selectedFlagId}
-                setSelectedFlagId={setSelectedFlagId}
-              />
-            </div>
-          </div>
-        </div>
+          {/* MAIN */}
+          <div className="flex flex-1 overflow-hidden">
+            {/* LEFT */}
+            <div className="flex flex-1 flex-col overflow-hidden">
+              {/* CANVAS */}
+              <div className="relative flex-1 bg-white">
+                <div ref={wrapRef} className="absolute inset-0">
+                  <canvas ref={canvasRef} className="h-full w-full" />
+                </div>
+              </div>
 
-        {/* RIGHT SIDEBAR */}
-        <div className="w-[380px] shrink-0 border-l border-slate-200 bg-white overflow-y-auto">
-          <RightSidebar
-            timeline={
-              <TimelinePanel
-                durationMs={durationMs}
-                setDurationMs={setDurationMs}
-                fps={fps}
-                setFps={setFps}
+              {/* SCRUB */}
+              <AudioScrubberBar
                 timeMs={timeMs}
-                setTimeMs={setTimeMs}
+                durationMs={durationMs}
+                scrubberStep={50}
+                onScrubTo={(t) => {
+                  setIsPlaying(false);
+                  setTimeMs(t);
+                }}
+                onJumpStart={() => {
+                  setIsPlaying(false);
+                  setTimeMs(0);
+                }}
+                onTogglePlay={() => setIsPlaying((p) => !p)}
+                onJumpEnd={() => {
+                  setIsPlaying(false);
+                  setTimeMs(durationMs);
+                }}
                 isPlaying={isPlaying}
-                setIsPlaying={setIsPlaying}
+                playbackRate={playbackRate}
+                setPlaybackRate={setPlaybackRate}
               />
-            }
-            course={
-              <CoursePanel
-                marks={marks}
-                setMarks={setMarks}
-                wind={wind}
-                setWind={setWind}
-                startLine={startLine}
-                setStartLine={setStartLine}
-                boatsOptions={boatsOptions}
-                showStartLine={showStartLine}
-                setShowStartLine={setShowStartLine}
-                showMarks={showMarks}
-                setShowMarks={setShowMarks}
-                showMarkThreeBL={showMarkThreeBL}
-                setShowMarkThreeBL={setShowMarkThreeBL}
-                showBoatTransomLines={showBoatTransomLines}
-                setShowBoatTransomLines={setShowBoatTransomLines}
-              />
-            }
-            flags={
-              <FlagsPanel
-                flags={flags}
-                setFlags={setFlags}
-                flagClipsByFlagId={flagClipsByFlagId}
-                setFlagClipsByFlagId={setFlagClipsByFlagId}
-                selectedFlagId={selectedFlagId}
-                setSelectedFlagId={setSelectedFlagId}
-                timeMs={timeMs}
-                durationMs={durationMs}
-              />
-            }
-            inspector={
-              <InspectorPanel
-                selectedBoatId={selectedBoatId}
-                selectedBoat={selectedBoat}
-                onUpdateSelectedBoat={updateSelectedBoat}
-                displayedForInspector={displayedForInspector}
-                stepsCountForSelectedBoat={
-                  selectedBoatId
-                    ? (stepsByBoatId[selectedBoatId] || []).length
-                    : 0
+
+              {/* TIMELINE */}
+              <div className="shrink-0 border-t border-slate-200 bg-white">
+                <div className="px-4 pb-3">
+                  <StepsDopeSheet
+                    boats={boats}
+                    stepsByBoatId={stepsByBoatId}
+                    setStepsByBoatId={setStepsByBoatId}
+                    displayedBoats={displayedBoats}
+                    timeMs={timeMs}
+                    durationMs={durationMs}
+                    fps={fps}
+                    selectedBoatId={selectedBoatId}
+                    setSelectedBoatId={setSelectedBoatId}
+                    setTimeMs={setTimeMs}
+                    setIsPlaying={setIsPlaying}
+                    isPlaying={isPlaying}
+                    flags={flags}
+                    flagClipsByFlagId={flagClipsByFlagId}
+                    setFlagClipsByFlagId={setFlagClipsByFlagId}
+                    selectedFlagId={selectedFlagId}
+                    setSelectedFlagId={setSelectedFlagId}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT SIDEBAR */}
+            <div className="w-[380px] shrink-0 border-l border-slate-200 bg-white overflow-y-auto">
+              <RightSidebar
+                timeline={
+                  <TimelinePanel
+                    durationMs={durationMs}
+                    setDurationMs={setDurationMs}
+                    fps={fps}
+                    setFps={setFps}
+                    timeMs={timeMs}
+                    setTimeMs={setTimeMs}
+                    isPlaying={isPlaying}
+                    setIsPlaying={setIsPlaying}
+                  />
                 }
-                exportText={exportText}
-                setExportText={setExportText}
+                course={
+                  <CoursePanel
+                    marks={marks}
+                    setMarks={setMarks}
+                    wind={wind}
+                    setWind={setWind}
+                    startLine={startLine}
+                    setStartLine={setStartLine}
+                    boatsOptions={boatsOptions}
+                    showStartLine={showStartLine}
+                    setShowStartLine={setShowStartLine}
+                    showMarks={showMarks}
+                    setShowMarks={setShowMarks}
+                    showMarkThreeBL={showMarkThreeBL}
+                    setShowMarkThreeBL={setShowMarkThreeBL}
+                    showBoatTransomLines={showBoatTransomLines}
+                    setShowBoatTransomLines={setShowBoatTransomLines}
+                  />
+                }
+                flags={
+                  <FlagsPanel
+                    flags={flags}
+                    setFlags={setFlags}
+                    flagClipsByFlagId={flagClipsByFlagId}
+                    setFlagClipsByFlagId={setFlagClipsByFlagId}
+                    selectedFlagId={selectedFlagId}
+                    setSelectedFlagId={setSelectedFlagId}
+                    timeMs={timeMs}
+                    durationMs={durationMs}
+                  />
+                }
+                inspector={
+                  <InspectorPanel
+                    selectedBoatId={selectedBoatId}
+                    selectedBoat={selectedBoat}
+                    onUpdateSelectedBoat={updateSelectedBoat}
+                    displayedForInspector={displayedForInspector}
+                    stepsCountForSelectedBoat={
+                      selectedBoatId
+                        ? (stepsByBoatId[selectedBoatId] || []).length
+                        : 0
+                    }
+                    exportText={exportText}
+                    setExportText={setExportText}
+                  />
+                }
               />
-            }
-          />
+            </div>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* WELCOME */}
       <WelcomeOverlay
@@ -563,6 +708,6 @@ export default function SailingAnimationBuilder() {
         onClose={() => setShowWelcome(false)}
         onPickScenario={loadScenario}
       />
-    </div>
+    </>
   );
 }
