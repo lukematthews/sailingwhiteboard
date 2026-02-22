@@ -60,3 +60,26 @@ export function drawBoat(
 
   ctx.restore();
 }
+
+/**
+ * Draw only an outline of the hull — used for collision emphasis etc.
+ * Uses the same BOAT_PATH as the filled hull, so it matches exactly.
+ */
+export function drawBoatOutline(
+  ctx: CanvasRenderingContext2D,
+  boat: Pick<Boat, "x" | "y" | "headingDeg">,
+  style: { strokeStyle: string; lineWidth?: number; dash?: number[] },
+) {
+  ctx.save();
+  ctx.translate(boat.x, boat.y);
+  ctx.rotate((boat.headingDeg * Math.PI) / 180);
+
+  const hull = new Path2D(BOAT_PATH);
+
+  ctx.strokeStyle = style.strokeStyle;
+  ctx.lineWidth = style.lineWidth ?? 3;
+  if (style.dash && style.dash.length) ctx.setLineDash(style.dash);
+  ctx.stroke(hull);
+
+  ctx.restore();
+}

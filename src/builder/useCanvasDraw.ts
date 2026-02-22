@@ -1,7 +1,7 @@
 // src/builder/useCanvasDraw.ts
 import { useEffect } from "react";
 import { formatTime, snapTime } from "../lib/time";
-import { drawBoat } from "../canvas/boat";
+import { drawBoat, drawBoatOutline } from "../canvas/boat";
 import { drawGrid } from "../canvas/grid";
 import { drawMark } from "../canvas/marks";
 import { drawWind } from "../canvas/wind";
@@ -22,6 +22,8 @@ import type {
 import { findClosestStepIndex, frameStepMs, sortSteps } from "./utilSteps";
 import { drawStepBadge } from "./drawStepBadge";
 import type { Camera } from "./camera";
+import { detectBoatCollisions } from "../canvas/collision";
+import { drawImpactStar } from "../canvas/drawStar";
 
 type Args = {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -204,10 +206,23 @@ export function useCanvasDraw(args: Args) {
     }
 
     // ------------------------------------------------------------
-    // Current boats
+    // ✅ Collision detection for CURRENT boats (ALWAYS)
+    // ------------------------------------------------------------
+    const { collidingBoatIds, contacts } = detectBoatCollisions(displayedBoats);
+
+    // ------------------------------------------------------------
+    // Current boats + collision outlines
     // ------------------------------------------------------------
     for (const b of displayedBoats) {
       drawBoat(ctx, b, { showTransomOverlap: showBoatTransomLines });
+
+      // ✅ Always show outline when hulls are actually overlapping
+      if (collidingBoatIds.has(b.id)) {
+        drawBoatOutline(ctx, b, {
+          strokeStyle: "rgba(220,38,38,0.95)",
+          lineWidth: 4,
+        });
+      }
 
       // Hide selection ring while playing
       if (!isPlaying && b.id === selectedBoatId) {
@@ -220,6 +235,13 @@ export function useCanvasDraw(args: Args) {
         ctx.stroke();
         ctx.restore();
       }
+    }
+
+    // ------------------------------------------------------------
+    // ✅ Impact stars at contact points (ALWAYS)
+    // ------------------------------------------------------------
+    for (const p of contacts) {
+      drawImpactStar(ctx, p.x, p.y, { outerR: 11, innerR: 5, points: 5 });
     }
 
     // ------------------------------------------------------------
