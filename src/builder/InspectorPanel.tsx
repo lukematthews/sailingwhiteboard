@@ -10,9 +10,6 @@ type Props = {
 
   displayedForInspector: Boat | null;
   stepsCountForSelectedBoat: number;
-
-  exportText: string;
-  setExportText: (t: string) => void;
 };
 
 export default function InspectorPanel({
@@ -21,14 +18,12 @@ export default function InspectorPanel({
   onUpdateSelectedBoat,
   displayedForInspector,
   stepsCountForSelectedBoat,
-  exportText,
-  setExportText,
 }: Props) {
   return (
     <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
-      <h2 className="text-sm font-semibold text-slate-900">Inspector</h2>
+      <h2 className="text-sm font-semibold text-slate-900">Selection</h2>
       <p className="mt-1 text-xs text-slate-600">
-        Select a boat and adjust properties.
+        Double-tap to select. Long-press to drag.
       </p>
 
       <div className="mt-3 space-y-3">
@@ -121,20 +116,16 @@ export default function InspectorPanel({
                     <div>steps: {stepsCountForSelectedBoat}</div>
                   </div>
                 ) : null}
+                <div className="mt-2 text-[11px] text-slate-500">
+                  Timing edits (steps) live in the Dopesheet. This panel is for
+                  boat properties and selection.
+                </div>
               </div>
             </div>
           )}
         </div>
 
-        <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
-          <div className="text-xs font-medium text-slate-700">Project JSON</div>
-          <textarea
-            className="mt-2 h-52 w-full resize-none rounded-lg bg-white p-2 text-xs ring-1 ring-slate-200"
-            value={exportText}
-            onChange={(e) => setExportText(e.target.value)}
-            placeholder="Click Export to generate JSON, or paste JSON here then click Import."
-          />
-        </div>
+        {/* If you later add selectedMarkId/selectedStartHandle, this is where those go */}
       </div>
     </div>
   );

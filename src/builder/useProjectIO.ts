@@ -17,6 +17,31 @@ import {
   type ProjectFile,
 } from "./projectTypes";
 
+/**
+ * ✅ Scenario import/export wrapper.
+ *
+ * We still support importing raw ProjectFile JSON (older exports).
+ * But new exports are wrapped as:
+ *
+ * {
+ *   "type": "scenario",
+ *   "schemaVersion": 1,
+ *   "scenario": { "title": "...", "description": "...", "key": "optional" },
+ *   "project": { ...ProjectFile... }
+ * }
+ */
+export type ScenarioFile = {
+  type: "scenario";
+  schemaVersion: 1;
+  scenario?: {
+    title?: string;
+    description?: string;
+    key?: string;
+    createdAtIso?: string;
+  };
+  project: ProjectFile;
+};
+
 type Args = {
   durationMs: number;
   fps: number;
@@ -49,6 +74,12 @@ type Args = {
   exportText: string;
   setExportText: (s: string) => void;
 };
+
+function isScenarioFile(v: unknown): v is ScenarioFile {
+  if (!v || typeof v !== "object") return false;
+  const anyV = v as any;
+  return anyV.type === "scenario" && anyV.schemaVersion === 1 && anyV.project;
+}
 
 export function useProjectIO(args: Args) {
   const {
@@ -97,7 +128,18 @@ export function useProjectIO(args: Args) {
       flags,
       flagClipsByFlagId,
     };
-    setExportText(JSON.stringify(project, null, 2));
+
+    const scenario: ScenarioFile = {
+      type: "scenario",
+      schemaVersion: 1,
+      scenario: {
+        title: "Custom Scenario",
+        createdAtIso: new Date().toISOString(),
+      },
+      project,
+    };
+
+    setExportText(JSON.stringify(scenario, null, 2));
   }, [
     durationMs,
     fps,
@@ -196,7 +238,18 @@ export function useProjectIO(args: Args) {
   const loadProject = useCallback(
     (project: ProjectFile) => {
       applyProject(project);
-      setExportText(JSON.stringify(project, null, 2));
+
+      const scenario: ScenarioFile = {
+        type: "scenario",
+        schemaVersion: 1,
+        scenario: {
+          title: "Loaded Scenario",
+          createdAtIso: new Date().toISOString(),
+        },
+        project,
+      };
+
+      setExportText(JSON.stringify(scenario, null, 2));
     },
     [applyProject, setExportText],
   );
@@ -205,11 +258,18 @@ export function useProjectIO(args: Args) {
     (text?: string) => {
       try {
         const source = typeof text === "string" ? text : exportText;
-        const parsed = JSON.parse(source) as Partial<ProjectFile> & {
-          flagVisibilityById?: unknown;
-        };
+        const parsed = JSON.parse(source) as unknown;
+
         if (!parsed || typeof parsed !== "object") return;
-        applyProject(parsed);
+
+        // ✅ New scenario wrapper
+        if (isScenarioFile(parsed)) {
+          applyProject((parsed as ScenarioFile).project);
+          return;
+        }
+
+        // ✅ Old raw ProjectFile
+        applyProject(parsed as Partial<ProjectFile> & { flagVisibilityById?: unknown });
       } catch {
         // ignore parse errors
       }

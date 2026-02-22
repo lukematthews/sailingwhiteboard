@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "publisher": "World Sailing",
+    "edition": "2025-2028",
+    "notes": "Fill ruleText from an official licensed copy."
+  },
+  "rules": [
+    { "id": "RRS 10", "title": "On Opposite Tacks", "ruleText": "" },
+    { "id": "RRS 11", "title": "On the Same Tack, Overlapped", "ruleText": "" },
+    { "id": "RRS 12", "title": "On the Same Tack, Not Overlapped", "ruleText": "" },
+    { "id": "RRS 13", "title": "While Tacking", "ruleText": "" },
+    { "id": "RRS 14", "title": "Avoiding Contact", "ruleText": "" },
+    { "id": "RRS 15", "title": "Acquiring Right of Way", "ruleText": "" },
+    { "id": "RRS 16", "title": "Changing Course", "ruleText": "" },
+    { "id": "RRS 18", "title": "Mark-Room", "ruleText": "" }
+  ]
+}

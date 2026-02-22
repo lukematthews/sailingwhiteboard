@@ -5,6 +5,7 @@ import { uid } from "./lib/ids";
 import StepsDopeSheet from "./components/StepsDopeSheet";
 import CoursePanel from "./components/CoursePanel";
 import FlagsPanel from "./components/FlagsPanel";
+import ProjectPanel from "./builder/ProjectPanel";
 
 import type {
   Boat,
@@ -295,7 +296,7 @@ export default function SailingAnimationBuilder() {
   // ---------------------------------------------------------------------------
   const [exportText, setExportText] = useState("");
 
-  const { loadProject } = useProjectIO({
+  const { exportProject, importProject, loadProject } = useProjectIO({
     durationMs,
     fps,
     boats,
@@ -489,20 +490,13 @@ export default function SailingAnimationBuilder() {
                   setStepsByBoatId={setStepsByBoatId}
                 />
               }
-              inspector={
+              project={
                 <div className="px-3 pb-3">
-                  <InspectorPanel
-                    selectedBoatId={selectedBoatId}
-                    selectedBoat={selectedBoat}
-                    onUpdateSelectedBoat={updateSelectedBoat}
-                    displayedForInspector={displayedForInspector}
-                    stepsCountForSelectedBoat={
-                      selectedBoatId
-                        ? (stepsByBoatId[selectedBoatId] || []).length
-                        : 0
-                    }
+                  <ProjectPanel
                     exportText={exportText}
                     setExportText={setExportText}
+                    onExportScenario={exportProject /* or exportScenario */}
+                    onImportScenario={importProject /* or importScenario */}
                   />
                 </div>
               }
@@ -552,6 +546,21 @@ export default function SailingAnimationBuilder() {
                     setTimeMs={setTimeMs}
                     isPlaying={isPlaying}
                     setIsPlaying={setIsPlaying}
+                  />
+                </div>
+              }
+              selection={
+                <div className="px-3 pb-3">
+                  <InspectorPanel
+                    selectedBoatId={selectedBoatId}
+                    selectedBoat={selectedBoat}
+                    onUpdateSelectedBoat={updateSelectedBoat}
+                    displayedForInspector={displayedForInspector}
+                    stepsCountForSelectedBoat={
+                      selectedBoatId
+                        ? (stepsByBoatId[selectedBoatId] || []).length
+                        : 0
+                    }
                   />
                 </div>
               }
@@ -690,8 +699,14 @@ export default function SailingAnimationBuilder() {
                         ? (stepsByBoatId[selectedBoatId] || []).length
                         : 0
                     }
+                  />
+                }
+                project={
+                  <ProjectPanel
                     exportText={exportText}
                     setExportText={setExportText}
+                    onExportScenario={exportProject}
+                    onImportScenario={importProject}
                   />
                 }
               />

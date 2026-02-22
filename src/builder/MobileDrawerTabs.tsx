@@ -1,26 +1,29 @@
+// src/builder/MobileDrawerTabs.tsx
 import React, { useMemo, useState } from "react";
 
-type Key = "steps" | "inspector" | "course" | "flags" | "timeline";
+type Key = "steps" | "selection" | "course" | "flags" | "timeline" | "project";
 
 export function MobileDrawerTabs(props: {
   steps: React.ReactNode;
-  inspector: React.ReactNode;
+  selection: React.ReactNode;
   course: React.ReactNode;
   flags: React.ReactNode;
   timeline: React.ReactNode;
+  project: React.ReactNode;
   defaultTab?: Key;
 }) {
-  const { steps, inspector, course, flags, timeline } = props;
+  const { steps, selection, course, flags, timeline, project } = props;
   const [tab, setTab] = useState<Key>(props.defaultTab ?? "steps");
 
   const tabs = useMemo(
     () =>
       [
         ["steps", "Steps"],
-        ["inspector", "Inspect"],
+        ["selection", "Select"],
         ["course", "Course"],
         ["flags", "Flags"],
         ["timeline", "Time"],
+        ["project", "Project"],
       ] as const,
     [],
   );
@@ -28,13 +31,15 @@ export function MobileDrawerTabs(props: {
   const content =
     tab === "steps"
       ? steps
-      : tab === "inspector"
-        ? inspector
+      : tab === "selection"
+        ? selection
         : tab === "course"
           ? course
           : tab === "flags"
             ? flags
-            : timeline;
+            : tab === "timeline"
+              ? timeline
+              : project;
 
   return (
     <div className="h-full flex flex-col">

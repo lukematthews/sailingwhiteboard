@@ -6,9 +6,10 @@ export default function RightSidebar(props: {
   timeline?: React.ReactNode;
   course: React.ReactNode;
   flags: React.ReactNode;
-  inspector: React.ReactNode;
+  inspector: React.ReactNode; // (Selection panel)
+  project: React.ReactNode;
 }) {
-  const { timeline, course, flags, inspector } = props;
+  const { timeline, course, flags, inspector, project } = props;
 
   return (
     <Collapse
@@ -20,7 +21,8 @@ export default function RightSidebar(props: {
           : []),
         { key: "course", label: "Course", children: course },
         { key: "flags", label: "Flags", children: flags },
-        { key: "inspector", label: "Inspector", children: inspector },
+        { key: "inspector", label: "Selection", children: inspector },
+        { key: "project", label: "Project", children: project },
       ]}
     />
   );

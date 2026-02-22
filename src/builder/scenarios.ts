@@ -1,269 +1,115 @@
 // src/builder/scenarios.ts
-import { uid } from "../lib/ids";
 import type { ProjectFile } from "./projectTypes";
+import type { ScenarioFile } from "./useProjectIO";
+import raw from "./scenarios.json";
 
-export type ScenarioKey =
-  | "start-sequence"
-  | "boat-interaction"
-  | "protest-replay"
-  | "blank"
-  | "five-boat-start-rack";
+/**
+ * Scenarios are data-driven.
+ *
+ * - The WelcomeOverlay reads titles/desc/badges from scenarios.json.
+ * - Each scenario contains either:
+ *    - a raw ProjectFile payload (legacy), OR
+ *    - the ScenarioFile wrapper used by import/export (preferred).
+ *
+ * Keep this loader permissive so the scenario library can evolve without
+ * needing code changes for every new key or pack.
+ */
 
-export const SCENARIO_KEYS: ScenarioKey[] = [
-  "start-sequence",
-  "boat-interaction",
-  "protest-replay",
-  "five-boat-start-rack",
-  "blank",
-];
+/**
+ * Scenario keys are data-driven. Keep as `string`.
+ */
+export type ScenarioKey = string;
+
+export type ScenarioDefinition = {
+  key: ScenarioKey;
+  title: string;
+  desc?: string;
+  badge?: string;
+  hidden?: boolean;
+
+  // Library metadata (optional / for RRS packs)
+  type?: "rrs" | "demo" | "custom";
+  difficulty?: "basic" | "intermediate" | "advanced";
+  rules?: string[];
+  tags?: string[];
+  teachingPoints?: string[];
+  decisionSummary?: string;
+
+  // Payload: either a raw ProjectFile (legacy) or ScenarioFile (preferred)
+  project?: ProjectFile;
+  file?: ScenarioFile;
+};
+
+type ScenariosJson = {
+  schemaVersion: number;
+  scenarios: any[];
+};
+
+const parsed = raw as unknown as ScenariosJson;
+
+function deepClone<T>(v: T): T {
+  // ProjectFile is plain JSON data; this is enough and avoids accidental mutation.
+  return JSON.parse(JSON.stringify(v)) as T;
+}
+
+function isDifficulty(v: unknown): v is NonNullable<ScenarioDefinition["difficulty"]> {
+  return v === "basic" || v === "intermediate" || v === "advanced";
+}
+
+function isType(v: unknown): v is NonNullable<ScenarioDefinition["type"]> {
+  return v === "rrs" || v === "demo" || v === "custom";
+}
+
+export const SCENARIOS: ScenarioDefinition[] = (() => {
+  const list = Array.isArray(parsed?.scenarios) ? parsed.scenarios : [];
+  const cleaned: ScenarioDefinition[] = [];
+
+  for (const s of list) {
+    if (!s || typeof s !== "object") continue;
+    if (typeof (s as any).key !== "string") continue;
+
+    cleaned.push({
+      key: (s as any).key,
+      title: typeof (s as any).title === "string" ? (s as any).title : (s as any).key,
+      desc: typeof (s as any).desc === "string" ? (s as any).desc : undefined,
+      badge: typeof (s as any).badge === "string" ? (s as any).badge : undefined,
+      hidden: !!(s as any).hidden,
+
+      type: isType((s as any).type) ? (s as any).type : undefined,
+      difficulty: isDifficulty((s as any).difficulty) ? (s as any).difficulty : undefined,
+      rules: Array.isArray((s as any).rules) ? ((s as any).rules as string[]) : undefined,
+      tags: Array.isArray((s as any).tags) ? ((s as any).tags as string[]) : undefined,
+      teachingPoints: Array.isArray((s as any).teachingPoints)
+        ? ((s as any).teachingPoints as string[])
+        : undefined,
+      decisionSummary:
+        typeof (s as any).decisionSummary === "string" ? (s as any).decisionSummary : undefined,
+
+      file: (s as any).file as ScenarioFile | undefined,
+      project: (s as any).project as ProjectFile | undefined,
+    });
+  }
+
+  return cleaned;
+})();
+
+export const SCENARIO_KEYS: ScenarioKey[] = SCENARIOS.filter((s) => !s.hidden).map(
+  (s) => s.key,
+);
+
+export function getScenarioByKey(key: ScenarioKey): ScenarioDefinition | undefined {
+  return SCENARIOS.find((s) => s.key === key);
+}
 
 export function getScenarioProjectFile(key: ScenarioKey): ProjectFile {
-  switch (key) {
-    case "start-sequence":
-      return scenarioFiveBoatStartRack();
-    // return scenarioStartSequence();
-    case "boat-interaction":
-      return scenarioBoatInteraction();
-    case "protest-replay":
-      return scenarioProtestReplay();
-    case "five-boat-start-rack":
-      return scenarioFiveBoatStartRack(); // ✅ add
-    case "blank":
-      return scenarioBlank();
+  const s = getScenarioByKey(key);
+  if (!s) {
+    // fall back to blank if missing
+    const blank = SCENARIOS.find((x) => x.key === "blank");
+    return deepClone(blank?.file?.project ?? blank?.project ?? ({} as ProjectFile));
   }
-}
 
-// ---------------------------------------------------------------------------
-// Scenario builders
-// ---------------------------------------------------------------------------
-
-function baseProject(): Omit<ProjectFile, "boats" | "stepsByBoatId"> {
-  return {
-    version: 4,
-    durationMs: 120000,
-    fps: 10,
-    keyframesByBoatId: {},
-    marks: [
-      { id: uid(), name: "Windward", type: "round", x: 520, y: 150 },
-      { id: uid(), name: "Leeward", type: "round", x: 280, y: 450 },
-    ],
-    wind: { fromDeg: 0, speedKt: 15 },
-    startLine: {
-      committee: { x: 360, y: 360 },
-      pin: { x: 480, y: 360 },
-      startBoatId: null,
-    },
-    flags: [],
-    flagClipsByFlagId: {},
-  };
-}
-
-function scenarioStartSequence(): ProjectFile {
-  // TODO: implement 5-boat start-line racking + flags (Orange + Class + P)
-  return {
-    ...baseProject(),
-    durationMs: 60000,
-    fps: 10,
-    boats: [],
-    stepsByBoatId: {},
-    marks: [],
-    wind: { fromDeg: 0, speedKt: 15 },
-  };
-}
-
-function scenarioBoatInteraction(): ProjectFile {
-  // TODO: implement overlap / give-way interaction
-  return {
-    ...baseProject(),
-    durationMs: 60000,
-    fps: 10,
-    boats: [],
-    stepsByBoatId: {},
-    marks: [{ id: uid(), name: "Mark", type: "round", x: 440, y: 210 }],
-    wind: { fromDeg: 10, speedKt: 14 },
-  };
-}
-
-function scenarioProtestReplay(): ProjectFile {
-  // TODO: implement structured protest replay with a flag clip timeline
-  return {
-    ...baseProject(),
-    durationMs: 90000,
-    fps: 10,
-    boats: [],
-    stepsByBoatId: {},
-    marks: [],
-    wind: { fromDeg: 0, speedKt: 16 },
-  };
-}
-
-function scenarioBlank(): ProjectFile {
-  return {
-    version: 4,
-    durationMs: 60000,
-    fps: 10,
-    boats: [],
-    keyframesByBoatId: {},
-    stepsByBoatId: {},
-    marks: [],
-    wind: { fromDeg: 0, speedKt: 15 },
-    startLine: {
-      committee: { x: 360, y: 360 },
-      pin: { x: 480, y: 360 },
-      startBoatId: null,
-    },
-    flags: [],
-    flagClipsByFlagId: {},
-  };
-}
-
-function scenarioFiveBoatStartRack(): ProjectFile {
-  const durationMs = 120000;
-  const fps = 10;
-
-  // ✅ Start line: higher + ~double length, swapped ends (pin left, committee right)
-  const yLine = 240; // higher on canvas
-  const pin = { x: 80, y: yLine };
-  const committee = { x: 880, y: yLine };
-
-  // Boats
-  const b1 = uid();
-  const b2 = uid();
-  const b3 = uid();
-  const b4 = uid();
-  const b5 = uid();
-
-  // Flags
-  const orange = uid();
-  const classFlag = uid();
-  const prepP = uid();
-
-  // Timing: scaled “sequence” inside 0..60s, then sail 60..80s upwind
-  const START_MS = 60000;
-  const SAIL_UPCOURSE_END_MS = 80000;
-
-  const CLASS_UP_MS = 10000;
-  const CLASS_DOWN_MS = 60000;
-  const P_UP_MS = 20000;
-  const P_DOWN_MS = 50000;
-
-  const CLASS_CODE = "U" as any; // <-- replace with your actual class flag code if needed
-
-  // Helpers for “45° starboard tack” after start:
-  // y decreases (up the screen), x increases (to the right) with similar magnitude.
-  const upwindDx = -140;
-  const upwindDy = 140;
-
-  // Rack/stage y just below the line (line is at y=240)
-  const rackY = 275;
-  const preStartY = 305;
-
-  // Give each boat its own "slot" along the line to reduce collisions.
-  const slotXs = [220, 360, 500, 640, 780];
-
-  return {
-    ...baseProject(),
-    durationMs,
-    fps,
-    marks: [],
-    wind: { fromDeg: 0, speedKt: 15 },
-    startLine: { committee, pin, startBoatId: null },
-
-    flags: [
-      { id: orange, code: "O", x: 90, y: 120 },
-      { id: classFlag, code: CLASS_CODE, x: 90, y: 160 },
-      { id: prepP, code: "P", x: 90, y: 200 },
-    ],
-
-    // ✅ Clips per your spec
-    flagClipsByFlagId: {
-      [orange]: [{ id: uid(), startMs: 0, endMs: durationMs, code: "orange" }],
-      [classFlag]: [
-        { id: uid(), startMs: CLASS_UP_MS, endMs: CLASS_DOWN_MS, code: CLASS_CODE },
-      ],
-      [prepP]: [
-        { id: uid(), startMs: P_UP_MS, endMs: P_DOWN_MS, code: "P" },
-      ],
-    },
-
-    // Start boats off-screen-ish so they “arrive”
-    boats: [
-      { id: b1, label: "Boat 1", color: "#22c55e", x: -140, y: 520, headingDeg: 0 },
-      { id: b2, label: "Boat 2", color: "#3b82f6", x: 1100, y: 520, headingDeg: 0 },
-      { id: b3, label: "Boat 3", color: "#ef4444", x: 500, y: 820, headingDeg: 0 },
-      { id: b4, label: "Boat 4", color: "#f59e0b", x: -220, y: 120, headingDeg: 90 },
-      { id: b5, label: "Boat 5", color: "#a855f7", x: 1180, y: 120, headingDeg: 270 },
-    ],
-
-    stepsByBoatId: {
-      [b1]: [
-        // enter + converge + rack into slot 1
-        { id: uid(), tMs: 0, x: -140, y: 520, headingMode: "auto" },
-        { id: uid(), tMs: 20000, x: 140, y: 440, headingMode: "auto" },
-        { id: uid(), tMs: 42000, x: slotXs[0] - 10, y: preStartY + 20, headingMode: "auto" },
-        { id: uid(), tMs: 52000, x: slotXs[0], y: rackY + 18, headingMode: "auto" },
-        { id: uid(), tMs: 56000, x: slotXs[0] - 8, y: rackY + 26, headingMode: "auto" }, // rack back
-        { id: uid(), tMs: 59000, x: slotXs[0] + 6, y: rackY + 20, headingMode: "auto" }, // creep
-        // ✅ start at 60s: pop to/over line
-        { id: uid(), tMs: START_MS, x: slotXs[0], y: yLine - 6, headingMode: "auto" },
-        // ✅ sail upwind 20s on starboard tack (~45°): dx ≈ -dy
-        { id: uid(), tMs: SAIL_UPCOURSE_END_MS, x: slotXs[0] + upwindDx, y: (yLine - 6) - upwindDy, headingMode: "auto" },
-        // keep going
-        { id: uid(), tMs: 100000, x: slotXs[0] + upwindDx - 120, y: (yLine - 6) - upwindDy - 120, headingMode: "auto" },
-        { id: uid(), tMs: 120000, x: slotXs[0] + upwindDx - 220, y: (yLine - 6) - upwindDy - 220, headingMode: "auto" },
-      ],
-
-      [b2]: [
-        { id: uid(), tMs: 0, x: 1100, y: 520, headingMode: "auto" },
-        { id: uid(), tMs: 20000, x: 860, y: 440, headingMode: "auto" },
-        { id: uid(), tMs: 42000, x: slotXs[4] + 10, y: preStartY + 22, headingMode: "auto" },
-        { id: uid(), tMs: 52000, x: slotXs[4], y: rackY + 16, headingMode: "auto" },
-        { id: uid(), tMs: 56000, x: slotXs[4] + 10, y: rackY + 24, headingMode: "auto" },
-        { id: uid(), tMs: 59000, x: slotXs[4] - 8, y: rackY + 18, headingMode: "auto" },
-        { id: uid(), tMs: START_MS, x: slotXs[4], y: yLine - 6, headingMode: "auto" },
-        { id: uid(), tMs: SAIL_UPCOURSE_END_MS, x: slotXs[4] + upwindDx, y: (yLine - 6) - upwindDy, headingMode: "auto" },
-        { id: uid(), tMs: 100000, x: slotXs[4] + upwindDx - 120, y: (yLine - 6) - upwindDy - 120, headingMode: "auto" },
-        { id: uid(), tMs: 120000, x: slotXs[4] + upwindDx - 220, y: (yLine - 6) - upwindDy - 220, headingMode: "auto" },
-      ],
-
-      [b3]: [
-        { id: uid(), tMs: 0, x: 500, y: 820, headingMode: "auto" },
-        { id: uid(), tMs: 18000, x: 500, y: 620, headingMode: "auto" },
-        { id: uid(), tMs: 42000, x: slotXs[2], y: preStartY + 28, headingMode: "auto" },
-        { id: uid(), tMs: 52000, x: slotXs[2], y: rackY + 20, headingMode: "auto" },
-        { id: uid(), tMs: 56000, x: slotXs[2] + 12, y: rackY + 28, headingMode: "auto" }, // lateral rack
-        { id: uid(), tMs: 59000, x: slotXs[2] - 10, y: rackY + 22, headingMode: "auto" },
-        { id: uid(), tMs: START_MS, x: slotXs[2], y: yLine - 6, headingMode: "auto" },
-        { id: uid(), tMs: SAIL_UPCOURSE_END_MS, x: slotXs[2] + upwindDx, y: (yLine - 6) - upwindDy, headingMode: "auto" },
-        { id: uid(), tMs: 100000, x: slotXs[2] + upwindDx - 120, y: (yLine - 6) - upwindDy - 120, headingMode: "auto" },
-        { id: uid(), tMs: 120000, x: slotXs[2] + upwindDx - 220, y: (yLine - 6) - upwindDy - 220, headingMode: "auto" },
-      ],
-
-      [b4]: [
-        { id: uid(), tMs: 0, x: -220, y: 120, headingMode: "auto" },
-        { id: uid(), tMs: 20000, x: 140, y: 190, headingMode: "auto" },
-        { id: uid(), tMs: 42000, x: slotXs[1] - 20, y: preStartY + 14, headingMode: "auto" },
-        { id: uid(), tMs: 52000, x: slotXs[1], y: rackY + 12, headingMode: "auto" },
-        { id: uid(), tMs: 56000, x: slotXs[1] - 12, y: rackY + 20, headingMode: "auto" },
-        { id: uid(), tMs: 59000, x: slotXs[1] + 8, y: rackY + 14, headingMode: "auto" },
-        { id: uid(), tMs: START_MS, x: slotXs[1], y: yLine - 6, headingMode: "auto" },
-        { id: uid(), tMs: SAIL_UPCOURSE_END_MS, x: slotXs[1] + upwindDx, y: (yLine - 6) - upwindDy, headingMode: "auto" },
-        { id: uid(), tMs: 100000, x: slotXs[1] + upwindDx - 120, y: (yLine - 6) - upwindDy - 120, headingMode: "auto" },
-        { id: uid(), tMs: 120000, x: slotXs[1] + upwindDx - 220, y: (yLine - 6) - upwindDy - 220, headingMode: "auto" },
-      ],
-
-      [b5]: [
-        { id: uid(), tMs: 0, x: 1180, y: 120, headingMode: "auto" },
-        { id: uid(), tMs: 20000, x: 860, y: 190, headingMode: "auto" },
-        { id: uid(), tMs: 42000, x: slotXs[3] + 20, y: preStartY + 16, headingMode: "auto" },
-        { id: uid(), tMs: 52000, x: slotXs[3], y: rackY + 12, headingMode: "auto" },
-        { id: uid(), tMs: 56000, x: slotXs[3] + 14, y: rackY + 20, headingMode: "auto" },
-        { id: uid(), tMs: 59000, x: slotXs[3] - 10, y: rackY + 14, headingMode: "auto" },
-        { id: uid(), tMs: START_MS, x: slotXs[3], y: yLine - 6, headingMode: "auto" },
-        { id: uid(), tMs: SAIL_UPCOURSE_END_MS, x: slotXs[3] + upwindDx, y: (yLine - 6) - upwindDy, headingMode: "auto" },
-        { id: uid(), tMs: 100000, x: slotXs[3] + upwindDx - 120, y: (yLine - 6) - upwindDy - 120, headingMode: "auto" },
-        { id: uid(), tMs: 120000, x: slotXs[3] + upwindDx - 220, y: (yLine - 6) - upwindDy - 220, headingMode: "auto" },
-      ],
-    },
-  };
+  // Prefer ScenarioFile wrapper payload if present
+  if (s.file?.project) return deepClone(s.file.project);
+  return deepClone(s.project ?? ({} as ProjectFile));
 }
