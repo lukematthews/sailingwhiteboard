@@ -1,6 +1,7 @@
 // src/canvas/collision.ts
-import type { Boat } from "../types";
+import type { Boat, Mark } from "../types";
 import { BOAT_PATH } from "./boat";
+import { MARK_RADIUS_PX } from "./marks";
 
 export type Point = { x: number; y: number };
 
@@ -522,7 +523,6 @@ export function resolveDraggedBoatPositionNoOverlap(params: {
       hullLocal,
     );
 
-  // Try desired first
   const hitDesired = testAt(desired);
   const contactFromDesired =
     hitDesired.hit && hitDesired.otherId
@@ -538,7 +538,6 @@ export function resolveDraggedBoatPositionNoOverlap(params: {
     return { pos: desired, contact: null };
   }
 
-  // Slide: remove component into the collision normal (keeps motion “along” if possible)
   const n = normalize(hitDesired.axis);
   const into = Math.max(0, dot(delta, n));
   const slideDelta = sub(delta, mul(n, into));
@@ -552,7 +551,6 @@ export function resolveDraggedBoatPositionNoOverlap(params: {
     }
   }
 
-  // Binary search along original delta to stop exactly at contact
   const hitCur = testAt(cur);
   if (hitCur.hit) {
     return { pos: cur, contact: contactFromDesired };
@@ -574,4 +572,117 @@ export function resolveDraggedBoatPositionNoOverlap(params: {
   }
 
   return { pos: add(cur, mul(delta, lo)), contact: contactFromDesired };
+}
+
+// ============================================================
+// ✅ Boat ↔ Mark collisions (circle vs boat hull polygon)
+// ============================================================
+
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function closestPointOnSegment(p: Point, a: Point, b: Point): Point {
+  const ab = sub(b, a);
+  const ap = sub(p, a);
+  const ab2 = dot(ab, ab);
+  if (ab2 <= 1e-9) return a;
+  const t = clamp(dot(ap, ab) / ab2, 0, 1);
+  return add(a, mul(ab, t));
+}
+
+function pointInPolygon(p: Point, poly: Point[]) {
+  // Ray casting
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const pi = poly[i];
+    const pj = poly[j];
+    const intersect =
+      pi.y > p.y !== pj.y > p.y &&
+      p.x < ((pj.x - pi.x) * (p.y - pi.y)) / (pj.y - pi.y + 1e-12) + pi.x;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function circleIntersectsPolygon(circleC: Point, r: number, poly: Point[]) {
+  // Find closest point on polygon boundary to circle center
+  let closest: Point | null = null;
+  let minD2 = Infinity;
+
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    const q = closestPointOnSegment(circleC, a, b);
+    const dx = circleC.x - q.x;
+    const dy = circleC.y - q.y;
+    const d2 = dx * dx + dy * dy;
+    if (d2 < minD2) {
+      minD2 = d2;
+      closest = q;
+    }
+  }
+
+  if (!closest) return { hit: false as const };
+
+  const inside = pointInPolygon(circleC, poly);
+  const dist = Math.sqrt(minD2);
+
+  // If the center is inside, we consider it a collision even if dist>r (it won't be),
+  // but for a convex hull this is fine.
+  const hit = inside || dist <= r;
+
+  if (!hit) return { hit: false as const };
+
+  // Contact point on hull boundary (closest point)
+  const contact = closest;
+
+  // Normal points from hull boundary toward circle center (so "push out" is along normal)
+  const n = normalize(sub(circleC, contact));
+  const depth = inside ? r + dist : Math.max(0, r - dist);
+
+  return { hit: true as const, contact, normal: n, depth };
+}
+
+export function detectBoatMarkCollisions(
+  boats: Boat[],
+  marks: Mark[],
+  opts?: { hullPath?: string; markRadiusPx?: number },
+): {
+  collidingBoatIds: Set<string>;
+  collidingMarkIds: Set<string>;
+  contacts: Array<{ x: number; y: number; boatId: string; markId: string }>;
+} {
+  const hullPath = opts?.hullPath ?? BOAT_PATH;
+  const hullLocal = getHullLocal(hullPath);
+  const r = opts?.markRadiusPx ?? MARK_RADIUS_PX;
+
+  const collidingBoatIds = new Set<string>();
+  const collidingMarkIds = new Set<string>();
+  const contacts: Array<{
+    x: number;
+    y: number;
+    boatId: string;
+    markId: string;
+  }> = [];
+
+  for (const b of boats) {
+    const poly = boatPolyWorld(b, hullLocal);
+
+    for (const m of marks) {
+      const res = circleIntersectsPolygon({ x: m.x, y: m.y }, r, poly);
+      if (!res.hit) continue;
+
+      collidingBoatIds.add(b.id);
+      collidingMarkIds.add(m.id);
+      contacts.push({
+        x: res.contact.x,
+        y: res.contact.y,
+        boatId: b.id,
+        markId: m.id,
+      });
+    }
+  }
+
+  return { collidingBoatIds, collidingMarkIds, contacts };
 }

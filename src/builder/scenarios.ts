@@ -2,22 +2,20 @@
 import type { ProjectFile } from "./projectTypes";
 import type { ScenarioFile } from "./useProjectIO";
 import raw from "./scenarios.json";
+import rawRrs from "./rrsScenarios.json";
 
 /**
  * Scenarios are data-driven.
  *
- * - The WelcomeOverlay reads titles/desc/badges from scenarios.json.
+ * - The WelcomeOverlay reads titles/desc/badges from scenarios JSON.
  * - Each scenario contains either:
  *    - a raw ProjectFile payload (legacy), OR
  *    - the ScenarioFile wrapper used by import/export (preferred).
  *
- * Keep this loader permissive so the scenario library can evolve without
- * needing code changes for every new key or pack.
+ * We load from multiple JSON files so the RRS pack can evolve independently
+ * without constantly editing a huge scenarios.json.
  */
 
-/**
- * Scenario keys are data-driven. Keep as `string`.
- */
 export type ScenarioKey = string;
 
 export type ScenarioDefinition = {
@@ -46,13 +44,15 @@ type ScenariosJson = {
 };
 
 const parsed = raw as unknown as ScenariosJson;
+const parsedRrs = rawRrs as unknown as ScenariosJson;
 
 function deepClone<T>(v: T): T {
-  // ProjectFile is plain JSON data; this is enough and avoids accidental mutation.
   return JSON.parse(JSON.stringify(v)) as T;
 }
 
-function isDifficulty(v: unknown): v is NonNullable<ScenarioDefinition["difficulty"]> {
+function isDifficulty(
+  v: unknown,
+): v is NonNullable<ScenarioDefinition["difficulty"]> {
   return v === "basic" || v === "intermediate" || v === "advanced";
 }
 
@@ -60,56 +60,71 @@ function isType(v: unknown): v is NonNullable<ScenarioDefinition["type"]> {
   return v === "rrs" || v === "demo" || v === "custom";
 }
 
+function coerceScenario(s: any): ScenarioDefinition | null {
+  if (!s || typeof s !== "object") return null;
+  if (typeof s.key !== "string") return null;
+
+  return {
+    key: s.key,
+    title: typeof s.title === "string" ? s.title : s.key,
+    desc: typeof s.desc === "string" ? s.desc : undefined,
+    badge: typeof s.badge === "string" ? s.badge : undefined,
+    hidden: !!s.hidden,
+
+    type: isType(s.type) ? s.type : undefined,
+    difficulty: isDifficulty(s.difficulty) ? s.difficulty : undefined,
+    rules: Array.isArray(s.rules) ? (s.rules as string[]) : undefined,
+    tags: Array.isArray(s.tags) ? (s.tags as string[]) : undefined,
+    teachingPoints: Array.isArray(s.teachingPoints)
+      ? (s.teachingPoints as string[])
+      : undefined,
+    decisionSummary:
+      typeof s.decisionSummary === "string" ? s.decisionSummary : undefined,
+
+    file: s.file as ScenarioFile | undefined,
+    project: s.project as ProjectFile | undefined,
+  };
+}
+
 export const SCENARIOS: ScenarioDefinition[] = (() => {
-  const list = Array.isArray(parsed?.scenarios) ? parsed.scenarios : [];
+  const merged = [
+    ...(Array.isArray(parsed?.scenarios) ? parsed.scenarios : []),
+    ...(Array.isArray(parsedRrs?.scenarios) ? parsedRrs.scenarios : []),
+  ];
+
   const cleaned: ScenarioDefinition[] = [];
+  const seen = new Set<string>();
 
-  for (const s of list) {
-    if (!s || typeof s !== "object") continue;
-    if (typeof (s as any).key !== "string") continue;
-
-    cleaned.push({
-      key: (s as any).key,
-      title: typeof (s as any).title === "string" ? (s as any).title : (s as any).key,
-      desc: typeof (s as any).desc === "string" ? (s as any).desc : undefined,
-      badge: typeof (s as any).badge === "string" ? (s as any).badge : undefined,
-      hidden: !!(s as any).hidden,
-
-      type: isType((s as any).type) ? (s as any).type : undefined,
-      difficulty: isDifficulty((s as any).difficulty) ? (s as any).difficulty : undefined,
-      rules: Array.isArray((s as any).rules) ? ((s as any).rules as string[]) : undefined,
-      tags: Array.isArray((s as any).tags) ? ((s as any).tags as string[]) : undefined,
-      teachingPoints: Array.isArray((s as any).teachingPoints)
-        ? ((s as any).teachingPoints as string[])
-        : undefined,
-      decisionSummary:
-        typeof (s as any).decisionSummary === "string" ? (s as any).decisionSummary : undefined,
-
-      file: (s as any).file as ScenarioFile | undefined,
-      project: (s as any).project as ProjectFile | undefined,
-    });
+  for (const s of merged) {
+    const c = coerceScenario(s);
+    if (!c) continue;
+    if (seen.has(c.key)) continue; // avoid accidental duplicates
+    seen.add(c.key);
+    cleaned.push(c);
   }
 
   return cleaned;
 })();
 
-export const SCENARIO_KEYS: ScenarioKey[] = SCENARIOS.filter((s) => !s.hidden).map(
-  (s) => s.key,
-);
+export const SCENARIO_KEYS: ScenarioKey[] = SCENARIOS.filter(
+  (s) => !s.hidden,
+).map((s) => s.key);
 
-export function getScenarioByKey(key: ScenarioKey): ScenarioDefinition | undefined {
+export function getScenarioByKey(
+  key: ScenarioKey,
+): ScenarioDefinition | undefined {
   return SCENARIOS.find((s) => s.key === key);
 }
 
 export function getScenarioProjectFile(key: ScenarioKey): ProjectFile {
   const s = getScenarioByKey(key);
   if (!s) {
-    // fall back to blank if missing
     const blank = SCENARIOS.find((x) => x.key === "blank");
-    return deepClone(blank?.file?.project ?? blank?.project ?? ({} as ProjectFile));
+    return deepClone(
+      blank?.file?.project ?? blank?.project ?? ({} as ProjectFile),
+    );
   }
 
-  // Prefer ScenarioFile wrapper payload if present
   if (s.file?.project) return deepClone(s.file.project);
   return deepClone(s.project ?? ({} as ProjectFile));
 }

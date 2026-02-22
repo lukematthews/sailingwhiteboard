@@ -1,4 +1,7 @@
+// src/canvas/marks.ts
 import type { Mark } from "../types";
+
+export const MARK_RADIUS_PX = 12;
 
 export type MarkDrawOptions = {
   showThreeBoatLengthCircle?: boolean;
@@ -15,7 +18,7 @@ export function drawMark(
   // ------------------------------------------------------------
   // Mark geometry
   // ------------------------------------------------------------
-  const r = 12; // mark radius (must match hitTestMark)
+  const r = MARK_RADIUS_PX; // mark radius (must match hitTestMark)
 
   const { showThreeBoatLengthCircle = false, boatLengthPx = 90 } = opts;
 
@@ -64,7 +67,7 @@ export function drawMark(
 }
 
 export function hitTestMark(px: number, py: number, m: Mark) {
-  const r = 12;
+  const r = MARK_RADIUS_PX;
   const dx = px - m.x;
   const dy = py - m.y;
   return dx * dx + dy * dy <= r * r;

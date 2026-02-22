@@ -6,6 +6,7 @@ import StepsDopeSheet from "./components/StepsDopeSheet";
 import CoursePanel from "./components/CoursePanel";
 import FlagsPanel from "./components/FlagsPanel";
 import ProjectPanel from "./builder/ProjectPanel";
+import RrsLibraryPanel from "./builder/RrsLibraryPanel";
 
 import type {
   Boat,
@@ -707,6 +708,15 @@ export default function SailingAnimationBuilder() {
                     setExportText={setExportText}
                     onExportScenario={exportProject}
                     onImportScenario={importProject}
+                  />
+                }
+                rrs={
+                  <RrsLibraryPanel
+                    onLoadScenario={(key: ScenarioKey) => {
+                      const project = getScenarioProjectFile(key);
+                      loadProject(project); // from useProjectIO
+                      setShowWelcome(false); // optional: if you want overlay closed
+                    }}
                   />
                 }
               />
