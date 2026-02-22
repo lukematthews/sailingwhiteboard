@@ -17,6 +17,7 @@ import { hitTestStartHandle } from "../canvas/startLine";
 import { hitTestFlag, resolveActiveFlagCode } from "../canvas/flags";
 import type { Camera } from "./camera";
 import { screenToWorld } from "./camera";
+import { resolveDraggedBoatPositionNoOverlap } from "../canvas/collision";
 
 type Args = {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -170,6 +171,19 @@ export function useCanvasInteractions(args: Args) {
 
     let active: DragMode = null;
 
+    // ------------------------------------------------------------
+    // Drag session state for BOAT dragging (incremental, smooth)
+    // ------------------------------------------------------------
+    let boatDragLastPointerWorld: { x: number; y: number } | null = null;
+    let boatDragLastBoatPos: { x: number; y: number } | null = null;
+    let boatDragLastTangentSign = 1;
+
+    const resetBoatDragSession = () => {
+      boatDragLastPointerWorld = null;
+      boatDragLastBoatPos = null;
+      boatDragLastTangentSign = 1;
+    };
+
     // Touch long-press state
     const LONG_PRESS_MS = 420;
     const MOVE_SLOP_PX = 10;
@@ -199,6 +213,16 @@ export function useCanvasInteractions(args: Args) {
       (canvas as any).__swbTouchEntityDragPointerId = pointerId ?? undefined;
     };
 
+    // Used by draw loop to disable playback solver during drag
+    const setDraggingBoatId = (boatId: string | null) => {
+      (canvas as any).__swbDraggingBoatId = boatId ?? undefined;
+    };
+
+    // Used by draw loop to show contact while clamped to non-overlap pos
+    const setDragContact = (v: any | null) => {
+      (canvas as any).__swbDragContact = v ?? undefined;
+    };
+
     const getScreenPoint = (e: PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
       return { x: e.clientX - rect.left, y: e.clientY - rect.top };
@@ -222,7 +246,10 @@ export function useCanvasInteractions(args: Args) {
     const cancelActive = (pointerId?: number) => {
       active = null;
       setTouchDragPointer(null);
+      setDraggingBoatId(null);
+      setDragContact(null);
       clearLongPress();
+      resetBoatDragSession();
       if (pointerId != null) {
         try {
           canvas.releasePointerCapture(pointerId);
@@ -310,12 +337,16 @@ export function useCanvasInteractions(args: Args) {
       if (mode.kind === "start" && !showStartLineRef.current) return;
 
       if (mode.kind === "start") {
+        setDraggingBoatId(null);
+        setDragContact(null);
         const handle = mode.handle;
         setStartLine((s) => ({ ...s, [handle]: { x: pWorld.x, y: pWorld.y } }));
         return;
       }
 
       if (mode.kind === "flag") {
+        setDraggingBoatId(null);
+        setDragContact(null);
         const { flagId, dragOffset } = mode;
         const snapNow = snapRef.current;
 
@@ -336,6 +367,8 @@ export function useCanvasInteractions(args: Args) {
       }
 
       if (mode.kind === "mark") {
+        setDraggingBoatId(null);
+        setDragContact(null);
         const { markId, dragOffset } = mode;
         const snapNow = snapRef.current;
 
@@ -358,7 +391,7 @@ export function useCanvasInteractions(args: Args) {
       }
 
       if (mode.kind === "boat") {
-        const { boatId, mode: boatMode, dragOffset } = mode;
+        const { boatId, mode: boatMode } = mode;
         const snapNow = snapRef.current;
 
         const nowT = snapTime(timeRef.current, fpsRef.current);
@@ -367,22 +400,120 @@ export function useCanvasInteractions(args: Args) {
         if (!bNow) return;
 
         if (boatMode === "drag") {
-          let nx = pWorld.x - dragOffset.x;
-          let ny = pWorld.y - dragOffset.y;
+          setDraggingBoatId(boatId);
+
+          // ✅ Initialize drag session state on first move after activation
+          if (!boatDragLastPointerWorld)
+            boatDragLastPointerWorld = { ...pWorld };
+          if (!boatDragLastBoatPos)
+            boatDragLastBoatPos = { x: bNow.x, y: bNow.y };
+
+          const lastPointer = boatDragLastPointerWorld!;
+          const lastBoatPos = boatDragLastBoatPos!;
+
+          // Incremental finger delta in world space
+          const dx = pWorld.x - lastPointer.x;
+          const dy = pWorld.y - lastPointer.y;
+
+          // Update pointer immediately so we don’t accumulate weirdness
+          boatDragLastPointerWorld = { ...pWorld };
+
+          // Proposed desired position (incremental)
+          let desiredX = lastBoatPos.x + dx;
+          let desiredY = lastBoatPos.y + dy;
 
           if (snapNow) {
             const s = 5;
-            nx = Math.round(nx / s) * s;
-            ny = Math.round(ny / s) * s;
+            desiredX = Math.round(desiredX / s) * s;
+            desiredY = Math.round(desiredY / s) * s;
           }
 
+          const otherBoats = displayedBoatsRef.current
+            .filter((x) => x.id !== boatId)
+            .map((x) => ({
+              id: x.id,
+              x: x.x,
+              y: x.y,
+              headingDeg: x.headingDeg,
+            }));
+
+          // Solve from the *last applied* position, not from possibly-laggy state
+          let res = resolveDraggedBoatPositionNoOverlap({
+            movingBoat: {
+              id: boatId,
+              x: lastBoatPos.x,
+              y: lastBoatPos.y,
+              headingDeg: bNow.headingDeg,
+            },
+            desiredPos: { x: desiredX, y: desiredY },
+            otherBoats,
+          });
+
+          // Contact overlay for draw loop
+          if (res.contact) {
+            setDragContact({
+              boatId,
+              otherId: res.contact.otherId,
+              point: res.contact.point,
+            });
+          } else {
+            setDragContact(null);
+          }
+
+          // If solver clamps to near-zero movement but we are in contact,
+          // convert “pushing into” into a stable tangential crawl.
+          const movedDx = res.pos.x - lastBoatPos.x;
+          const movedDy = res.pos.y - lastBoatPos.y;
+          const movedLen = Math.hypot(movedDx, movedDy);
+
+          const inputLen = Math.hypot(dx, dy);
+
+          if (res.contact && inputLen > 0.2 && movedLen < 0.6) {
+            const n = res.contact.normal; // unit-ish
+            const t = { x: -n.y, y: n.x }; // unit-ish
+
+            const tComp = dx * t.x + dy * t.y;
+            if (Math.abs(tComp) > 0.25) {
+              boatDragLastTangentSign =
+                Math.sign(tComp) || boatDragLastTangentSign;
+            }
+
+            // Tangential crawl proportional to finger movement
+            const crawl = Math.min(14, Math.max(2, inputLen));
+            const nudgedDesired = {
+              x: lastBoatPos.x + t.x * crawl * boatDragLastTangentSign,
+              y: lastBoatPos.y + t.y * crawl * boatDragLastTangentSign,
+            };
+
+            // re-solve from lastBoatPos toward nudged desired
+            res = resolveDraggedBoatPositionNoOverlap({
+              movingBoat: {
+                id: boatId,
+                x: lastBoatPos.x,
+                y: lastBoatPos.y,
+                headingDeg: bNow.headingDeg,
+              },
+              desiredPos: nudgedDesired,
+              otherBoats,
+            });
+            // keep drag contact from original contact (don’t clear/set here)
+          }
+
+          // ✅ Update drag session last boat pos to the resolved result
+          boatDragLastBoatPos = { x: res.pos.x, y: res.pos.y };
+
+          // Commit to steps
           setStepsByBoatId((prev) =>
-            upsertStep(prev, boatId, nowT, { x: nx, y: ny }),
+            upsertStep(prev, boatId, nowT, { x: res.pos.x, y: res.pos.y }),
           );
           return;
         }
 
         if (boatMode === "rotate") {
+          setDraggingBoatId(null);
+          setDragContact(null);
+          resetBoatDragSession();
+
           const dx = pWorld.x - bNow.x;
           const dy = pWorld.y - bNow.y;
           const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
@@ -446,8 +577,6 @@ export function useCanvasInteractions(args: Args) {
         }
       }
 
-      // No selection model exists yet for marks/startline in the app;
-      // for now, clear selection when double-tapping empty space.
       setSelectedBoatId(null);
       setSelectedFlagId(null);
     };
@@ -458,9 +587,7 @@ export function useCanvasInteractions(args: Args) {
     const onDown = (e: PointerEvent) => {
       if (e.button === 1) return;
 
-      // Touch: mobile-first (pan/zoom in camera hook). We only do:
-      // - double tap selection
-      // - long press to drag entity
+      // Touch
       if (e.pointerType === "touch") {
         const pScreen = getScreenPoint(e);
 
@@ -470,14 +597,12 @@ export function useCanvasInteractions(args: Args) {
           pauseIfPlaying();
           const pWorld = getWorldPointFromScreen(pScreen);
           selectOnDoubleTap(pWorld);
-          // don't start a long press on the second tap
           e.preventDefault();
           return;
         }
 
         commitTap(pScreen);
 
-        // prepare long-press candidate (if finger is down on an entity)
         const pWorld = getWorldPointFromScreen(pScreen);
         const candidate = hitTestForDragCandidate(pWorld);
         if (!candidate) {
@@ -489,19 +614,18 @@ export function useCanvasInteractions(args: Args) {
         pendingTouchStartScreen = pScreen;
         pendingDragCandidate = candidate;
 
-        // Schedule long-press to "enter drag mode"
         if (longPressTimer != null) window.clearTimeout(longPressTimer);
         longPressTimer = window.setTimeout(() => {
-          // still the same pointer?
           if (pendingTouchPointerId !== e.pointerId) return;
           if (!pendingDragCandidate) return;
 
           pauseIfPlaying();
 
-          // activate drag
           active = pendingDragCandidate;
+          resetBoatDragSession();
+          setDragContact(null);
 
-          // set selection if applicable
+          // selection
           if (active.kind === "boat") {
             setSelectedBoatId(active.boatId);
             setSelectedFlagId(null);
@@ -509,7 +633,6 @@ export function useCanvasInteractions(args: Args) {
             setSelectedFlagId(active.flagId);
             setSelectedBoatId(null);
           } else {
-            // marks/startline have no selection state currently; just clear
             setSelectedBoatId(null);
             setSelectedFlagId(null);
           }
@@ -520,7 +643,6 @@ export function useCanvasInteractions(args: Args) {
             canvas.setPointerCapture(e.pointerId);
           } catch {}
 
-          // once active, no longer pending
           pendingDragCandidate = null;
           pendingTouchStartScreen = null;
           pendingTouchPointerId = null;
@@ -530,116 +652,33 @@ export function useCanvasInteractions(args: Args) {
         return;
       }
 
-      // ------------------------------------------------------------
-      // Desktop pointerdown: existing behaviour
-      // ------------------------------------------------------------
+      // Desktop: reuse same candidate logic
       const p = getWorldPoint(e);
-
-      // start line handles (ONLY if visible)
-      if (showStartLineRef.current) {
-        const h = hitTestStartHandle(p.x, p.y, startLineRef.current);
-        if (h) {
-          pauseIfPlaying();
-          active = { kind: "start", handle: h };
-          setSelectedBoatId(null);
-          setSelectedFlagId(null);
-          try {
-            canvas.setPointerCapture(e.pointerId);
-          } catch {}
-          e.preventDefault();
-          return;
-        }
-      }
-
-      // flags
-      const flagsNow = flagsRef.current;
-      for (let i = flagsNow.length - 1; i >= 0; i--) {
-        const f = flagsNow[i];
-        const codeNow = resolveActiveFlagCode(
-          f,
-          flagClipsRef.current[f.id],
-          timeRef.current,
-        );
-        if (!codeNow) continue;
-
-        if (hitTestFlag(p.x, p.y, f)) {
-          pauseIfPlaying();
-          active = {
-            kind: "flag",
-            flagId: f.id,
-            dragOffset: { x: p.x - f.x, y: p.y - f.y },
-          };
-          setSelectedFlagId(f.id);
-          setSelectedBoatId(null);
-          try {
-            canvas.setPointerCapture(e.pointerId);
-          } catch {}
-          e.preventDefault();
-          return;
-        }
-      }
-
-      // marks
-      if (showMarksRef.current) {
-        const marksNow = marksRef.current;
-        for (let i = marksNow.length - 1; i >= 0; i--) {
-          const m = marksNow[i];
-          if (hitTestMark(p.x, p.y, m)) {
-            pauseIfPlaying();
-            active = {
-              kind: "mark",
-              markId: m.id,
-              dragOffset: { x: p.x - m.x, y: p.y - m.y },
-            };
-            setSelectedBoatId(null);
-            setSelectedFlagId(null);
-            try {
-              canvas.setPointerCapture(e.pointerId);
-            } catch {}
-            e.preventDefault();
-            return;
-          }
-        }
-      }
-
-      // boats
-      const boatsNow = displayedBoatsRef.current;
-      let hit: Boat | null = null;
-      for (let i = boatsNow.length - 1; i >= 0; i--) {
-        const b = boatsNow[i];
-        if (hitTestBoat(p.x, p.y, b)) {
-          hit = b;
-          break;
-        }
-      }
-
-      if (!hit) {
+      const candidate = hitTestForDragCandidate(p);
+      if (!candidate) {
         active = null;
+        resetBoatDragSession();
+        setDraggingBoatId(null);
+        setDragContact(null);
         setSelectedBoatId(null);
         setSelectedFlagId(null);
         return;
       }
 
       pauseIfPlaying();
+      active = candidate;
+      resetBoatDragSession();
+      setDragContact(null);
 
-      setSelectedBoatId(hit.id);
-      setSelectedFlagId(null);
-
-      const toolNow = toolRef.current;
-      if (toolNow === "rotate") {
-        active = {
-          kind: "boat",
-          boatId: hit.id,
-          mode: "rotate",
-          dragOffset: { x: 0, y: 0 },
-        };
+      if (active.kind === "boat") {
+        setSelectedBoatId(active.boatId);
+        setSelectedFlagId(null);
+      } else if (active.kind === "flag") {
+        setSelectedFlagId(active.flagId);
+        setSelectedBoatId(null);
       } else {
-        active = {
-          kind: "boat",
-          boatId: hit.id,
-          mode: "drag",
-          dragOffset: { x: p.x - hit.x, y: p.y - hit.y },
-        };
+        setSelectedBoatId(null);
+        setSelectedFlagId(null);
       }
 
       try {
@@ -651,7 +690,6 @@ export function useCanvasInteractions(args: Args) {
     const onMove = (e: PointerEvent) => {
       // Touch: cancel long press if user starts moving (pan intent)
       if (e.pointerType === "touch") {
-        // If we are actively dragging an entity, apply drag move.
         if (active) {
           const pWorld = getWorldPoint(e);
           applyDragMove(active, pWorld);
@@ -659,7 +697,6 @@ export function useCanvasInteractions(args: Args) {
           return;
         }
 
-        // Not active: if we have a pending long press, cancel if moved too far.
         if (
           pendingTouchPointerId === e.pointerId &&
           pendingTouchStartScreen &&
@@ -676,22 +713,22 @@ export function useCanvasInteractions(args: Args) {
         return;
       }
 
-      // Desktop drag moves
       if (!active) return;
-
       const p = getWorldPoint(e);
       applyDragMove(active, p);
       e.preventDefault();
     };
 
     const onUp = (e: PointerEvent) => {
-      // Clear any pending long press
       if (e.pointerType === "touch") {
         clearLongPress();
       }
 
       active = null;
       setTouchDragPointer(null);
+      setDraggingBoatId(null);
+      setDragContact(null);
+      resetBoatDragSession();
 
       try {
         canvas.releasePointerCapture(e.pointerId);

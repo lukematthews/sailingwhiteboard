@@ -4,32 +4,41 @@ import { BOAT_PATH } from "./boat";
 
 export type Point = { x: number; y: number };
 
-type Triangle = [Point, Point, Point];
-
 type CacheEntry = {
-  // local-space polygon (flattened)
-  poly: Point[];
-  // local-space triangles (ear clipped)
-  tris: Triangle[];
+  hullLocal: Point[];
 };
 
-const shapeCache = new Map<string, CacheEntry>();
+const cache = new Map<string, CacheEntry>();
 
-// Tune: higher = more faithful to curved hull. 16–28 is a good range.
-const CURVE_SUBDIVISIONS = 22;
+const CURVE_SUBDIVISIONS = 26;
+const SLOP = 0.03;
+const SOLVER_ITERS = 5;
 
-/**
- * Convert degrees to radians.
- */
 function degToRad(deg: number) {
   return (deg * Math.PI) / 180;
 }
 
-/**
- * Transform a point from local boat space into world space.
- * Assumes 0° = up (negative y), positive rotation = clockwise,
- * which matches your canvas rotation convention.
- */
+function sub(a: Point, b: Point): Point {
+  return { x: a.x - b.x, y: a.y - b.y };
+}
+function add(a: Point, b: Point): Point {
+  return { x: a.x + b.x, y: a.y + b.y };
+}
+function mul(a: Point, s: number): Point {
+  return { x: a.x * s, y: a.y * s };
+}
+function dot(a: Point, b: Point) {
+  return a.x * b.x + a.y * b.y;
+}
+function cross(a: Point, b: Point) {
+  return a.x * b.y - a.y * b.x;
+}
+function normalize(v: Point): Point {
+  const len = Math.hypot(v.x, v.y);
+  if (len === 0) return { x: 0, y: 0 };
+  return { x: v.x / len, y: v.y / len };
+}
+
 function transformPointLocalToWorld(
   p: Point,
   x: number,
@@ -45,29 +54,18 @@ function transformPointLocalToWorld(
   };
 }
 
-function sub(a: Point, b: Point): Point {
-  return { x: a.x - b.x, y: a.y - b.y };
-}
-
-function dot(a: Point, b: Point) {
-  return a.x * b.x + a.y * b.y;
-}
-
-function cross(a: Point, b: Point) {
-  return a.x * b.y - a.y * b.x;
-}
-
-function dist2(a: Point, b: Point) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
+function transformPolygonLocalToWorld(
+  poly: Point[],
+  x: number,
+  y: number,
+  headingDeg: number,
+): Point[] {
+  return poly.map((p) => transformPointLocalToWorld(p, x, y, headingDeg));
 }
 
 /**
- * ===== SVG PATH FLATTENING =====
- * Supports M/m, L/l, H/h, V/v, C/c, Z/z. That covers your BOAT_PATH.
+ * SVG path flattening (M/m L/l H/h V/v C/c Z/z)
  */
-
 type Cmd =
   | { k: "M"; x: number; y: number }
   | { k: "L"; x: number; y: number }
@@ -82,8 +80,7 @@ type Cmd =
     }
   | { k: "Z" };
 
-function tokenizePath(d: string): Array<string> {
-  // Split by command letters and numbers (including negatives and decimals).
+function tokenizePath(d: string): string[] {
   const re = /[a-zA-Z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g;
   return d.match(re) ?? [];
 }
@@ -123,7 +120,6 @@ function parsePath(d: string): Cmd[] {
       sx = nx;
       sy = ny;
 
-      // Subsequent pairs are treated as implicit L
       while (i < t.length && !/^[a-zA-Z]$/.test(t[i]!)) {
         const lx = num();
         const ly = num();
@@ -198,8 +194,6 @@ function parsePath(d: string): Cmd[] {
       cy = sy;
       continue;
     }
-
-    // Unknown command — ignore safely
   }
 
   return out;
@@ -218,21 +212,16 @@ function cubicAt(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
   };
 }
 
-/**
- * Flatten path to a polygon. Assumes the path is a single closed loop.
- * Removes near-duplicate points.
- */
-function flattenPathToPolygon(d: string, curveSubdivisions: number): Point[] {
+function flattenPathToPoints(d: string, curveSubdivisions: number): Point[] {
   const cmds = parsePath(d);
 
   let cur: Point = { x: 0, y: 0 };
   let start: Point = { x: 0, y: 0 };
-
   const pts: Point[] = [];
 
   const push = (p: Point) => {
     const last = pts[pts.length - 1];
-    if (last && dist2(last, p) < 0.0001) return;
+    if (last && Math.hypot(last.x - p.x, last.y - p.y) < 1e-6) return;
     pts.push(p);
   };
 
@@ -251,8 +240,7 @@ function flattenPathToPolygon(d: string, curveSubdivisions: number): Point[] {
       const p3 = { x: c.x, y: c.y };
 
       for (let i = 1; i <= curveSubdivisions; i++) {
-        const t = i / curveSubdivisions;
-        push(cubicAt(p0, p1, p2, p3, t));
+        push(cubicAt(p0, p1, p2, p3, i / curveSubdivisions));
       }
       cur = p3;
     } else if (c.k === "Z") {
@@ -260,270 +248,330 @@ function flattenPathToPolygon(d: string, curveSubdivisions: number): Point[] {
     }
   }
 
-  // Ensure closed and remove final duplicate of first point
   if (pts.length > 2) {
     const first = pts[0];
     const last = pts[pts.length - 1];
-    if (dist2(first, last) < 0.0001) pts.pop();
+    if (Math.hypot(first.x - last.x, first.y - last.y) < 1e-6) pts.pop();
   }
 
   return pts;
 }
 
-/**
- * Ensure polygon is CCW (needed for ear clipping).
- */
-function polygonArea(poly: Point[]) {
-  let a = 0;
+function convexHull(points: Point[]): Point[] {
+  if (points.length <= 3) return points.slice();
+
+  const pts = points
+    .slice()
+    .sort((a, b) => (a.x === b.x ? a.y - b.y : a.x - b.x));
+
+  const lower: Point[] = [];
+  for (const p of pts) {
+    while (lower.length >= 2) {
+      const a = lower[lower.length - 2];
+      const b = lower[lower.length - 1];
+      if (cross(sub(b, a), sub(p, b)) <= 0) lower.pop();
+      else break;
+    }
+    lower.push(p);
+  }
+
+  const upper: Point[] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (upper.length >= 2) {
+      const a = upper[upper.length - 2];
+      const b = upper[upper.length - 1];
+      if (cross(sub(b, a), sub(p, b)) <= 0) upper.pop();
+      else break;
+    }
+    upper.push(p);
+  }
+
+  upper.pop();
+  lower.pop();
+  return lower.concat(upper);
+}
+
+function getHullLocal(hullPath: string): Point[] {
+  const existing = cache.get(hullPath);
+  if (existing) return existing.hullLocal;
+
+  const pts = flattenPathToPoints(hullPath, CURVE_SUBDIVISIONS);
+  const hull = convexHull(pts);
+
+  cache.set(hullPath, { hullLocal: hull });
+  return hull;
+}
+
+function getAxes(poly: Point[]): Point[] {
+  const axes: Point[] = [];
   for (let i = 0; i < poly.length; i++) {
-    const p = poly[i];
-    const q = poly[(i + 1) % poly.length];
-    a += p.x * q.y - q.x * p.y;
+    const p1 = poly[i];
+    const p2 = poly[(i + 1) % poly.length];
+    const edge = sub(p2, p1);
+    axes.push(normalize({ x: -edge.y, y: edge.x }));
   }
-  return a / 2;
+  return axes;
 }
 
-function ensureCCW(poly: Point[]) {
-  if (polygonArea(poly) < 0) poly.reverse();
+function project(poly: Point[], axis: Point): { min: number; max: number } {
+  let min = Infinity;
+  let max = -Infinity;
+  for (const p of poly) {
+    const v = dot(p, axis);
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return { min, max };
 }
 
-/**
- * Point in triangle (barycentric sign method).
- */
-function pointInTri(p: Point, a: Point, b: Point, c: Point) {
-  const v0 = sub(c, a);
-  const v1 = sub(b, a);
-  const v2 = sub(p, a);
-
-  const dot00 = dot(v0, v0);
-  const dot01 = dot(v0, v1);
-  const dot02 = dot(v0, v2);
-  const dot11 = dot(v1, v1);
-  const dot12 = dot(v1, v2);
-
-  const denom = dot00 * dot11 - dot01 * dot01;
-  if (denom === 0) return false;
-  const inv = 1 / denom;
-
-  const u = (dot11 * dot02 - dot01 * dot12) * inv;
-  const v = (dot00 * dot12 - dot01 * dot02) * inv;
-
-  return u >= 0 && v >= 0 && u + v <= 1;
+function intervalOverlap(
+  a: { min: number; max: number },
+  b: { min: number; max: number },
+) {
+  return Math.min(a.max, b.max) - Math.max(a.min, b.min);
 }
 
-/**
- * Ear clipping triangulation for simple polygons.
- * Works for convex and mild concave shapes.
- */
-function triangulateEarClip(polyIn: Point[]): Triangle[] {
-  const poly = polyIn.slice();
-  ensureCCW(poly);
+function centroid(poly: Point[]): Point {
+  let x = 0,
+    y = 0;
+  for (const p of poly) {
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / poly.length, y: y / poly.length };
+}
 
-  const tris: Triangle[] = [];
-  const idx = poly.map((_, i) => i);
+type SatResult =
+  | { hit: false }
+  | { hit: true; depth: number; axis: Point; contact: Point };
 
-  const isConvex = (prev: Point, cur: Point, next: Point) => {
-    const a = sub(cur, prev);
-    const b = sub(next, cur);
-    return cross(a, b) > 0;
-  };
+function satIntersect(a: Point[], b: Point[]): SatResult {
+  const axes = getAxes(a).concat(getAxes(b));
 
-  const maxIter = 10000;
-  let iter = 0;
+  let minDepth = Infinity;
+  let bestAxis: Point | null = null;
 
-  while (idx.length >= 3 && iter++ < maxIter) {
-    let earFound = false;
+  for (const axis0 of axes) {
+    const axis = normalize(axis0);
+    const pa = project(a, axis);
+    const pb = project(b, axis);
+    const overlap = intervalOverlap(pa, pb);
+    if (overlap <= 0) return { hit: false };
 
-    for (let i = 0; i < idx.length; i++) {
-      const iPrev = idx[(i - 1 + idx.length) % idx.length];
-      const iCur = idx[i];
-      const iNext = idx[(i + 1) % idx.length];
-
-      const pPrev = poly[iPrev];
-      const pCur = poly[iCur];
-      const pNext = poly[iNext];
-
-      if (!isConvex(pPrev, pCur, pNext)) continue;
-
-      // Check no other point inside ear
-      let hasInside = false;
-      for (let j = 0; j < idx.length; j++) {
-        const ij = idx[j];
-        if (ij === iPrev || ij === iCur || ij === iNext) continue;
-        if (pointInTri(poly[ij], pPrev, pCur, pNext)) {
-          hasInside = true;
-          break;
-        }
-      }
-      if (hasInside) continue;
-
-      tris.push([pPrev, pCur, pNext]);
-      idx.splice(i, 1);
-      earFound = true;
-      break;
-    }
-
-    if (!earFound) {
-      // fallback: stop to avoid infinite loop
-      break;
+    if (overlap < minDepth) {
+      minDepth = overlap;
+      bestAxis = axis;
     }
   }
 
-  return tris;
+  if (!bestAxis || !isFinite(minDepth)) return { hit: false };
+
+  const ca = centroid(a);
+  const cb = centroid(b);
+  const dir = sub(cb, ca);
+  if (dot(dir, bestAxis) < 0) bestAxis = { x: -bestAxis.x, y: -bestAxis.y };
+
+  const contact = { x: (ca.x + cb.x) / 2, y: (ca.y + cb.y) / 2 };
+
+  return { hit: true, depth: minDepth, axis: bestAxis, contact };
 }
 
-/**
- * Segment intersection for triangle edges.
- */
-function segIntersect(
-  a1: Point,
-  a2: Point,
-  b1: Point,
-  b2: Point,
-): Point | null {
-  const r = sub(a2, a1);
-  const s = sub(b2, b1);
-  const rxs = cross(r, s);
-  const qpxr = cross(sub(b1, a1), r);
-
-  if (rxs === 0 && qpxr === 0) return null; // collinear
-  if (rxs === 0 && qpxr !== 0) return null; // parallel
-
-  const t = cross(sub(b1, a1), s) / rxs;
-  const u = cross(sub(b1, a1), r) / rxs;
-
-  if (t >= 0 && t <= 1 && u >= 0 && u <= 1) {
-    return { x: a1.x + t * r.x, y: a1.y + t * r.y };
-  }
-  return null;
+function boatPolyWorld(
+  boat: Pick<Boat, "x" | "y" | "headingDeg">,
+  hullLocal: Point[],
+): Point[] {
+  return transformPolygonLocalToWorld(
+    hullLocal,
+    boat.x,
+    boat.y,
+    boat.headingDeg,
+  );
 }
 
-function triContainsPoint(tri: Triangle, p: Point) {
-  return pointInTri(p, tri[0], tri[1], tri[2]);
-}
+function firstCollisionAgainstOthers(
+  moving: Pick<Boat, "id" | "x" | "y" | "headingDeg">,
+  others: Pick<Boat, "id" | "x" | "y" | "headingDeg">[],
+  hullLocal: Point[],
+): SatResult & { otherId?: string } {
+  const pm = boatPolyWorld(moving, hullLocal);
 
-/**
- * Triangle-triangle intersection test + returns an approximate contact point.
- */
-function trianglesIntersect(
-  t1: Triangle,
-  t2: Triangle,
-): { hit: boolean; contact?: Point } {
-  // 1) Any vertex of t1 in t2?
-  for (const p of t1) {
-    if (triContainsPoint(t2, p)) return { hit: true, contact: p };
-  }
-  // 2) Any vertex of t2 in t1?
-  for (const p of t2) {
-    if (triContainsPoint(t1, p)) return { hit: true, contact: p };
-  }
-  // 3) Any edge intersects?
-  const e1: Array<[Point, Point]> = [
-    [t1[0], t1[1]],
-    [t1[1], t1[2]],
-    [t1[2], t1[0]],
-  ];
-  const e2: Array<[Point, Point]> = [
-    [t2[0], t2[1]],
-    [t2[1], t2[2]],
-    [t2[2], t2[0]],
-  ];
-  for (const [a1, a2] of e1) {
-    for (const [b1, b2] of e2) {
-      const p = segIntersect(a1, a2, b1, b2);
-      if (p) return { hit: true, contact: p };
-    }
+  for (const o of others) {
+    const po = boatPolyWorld(o, hullLocal);
+    const r = satIntersect(pm, po);
+    if (r.hit) return { ...r, otherId: o.id };
   }
   return { hit: false };
 }
 
-function getShape(path: string): CacheEntry {
-  const cached = shapeCache.get(path);
-  if (cached) return cached;
-
-  const poly = flattenPathToPolygon(path, CURVE_SUBDIVISIONS);
-
-  // If the source path isn’t explicitly closed, ensure it is
-  if (poly.length >= 3) ensureCCW(poly);
-
-  const tris = triangulateEarClip(poly);
-
-  const entry: CacheEntry = { poly, tris };
-  shapeCache.set(path, entry);
-  return entry;
-}
-
-function transformTriLocalToWorld(
-  tri: Triangle,
-  x: number,
-  y: number,
-  headingDeg: number,
-): Triangle {
-  return [
-    transformPointLocalToWorld(tri[0], x, y, headingDeg),
-    transformPointLocalToWorld(tri[1], x, y, headingDeg),
-    transformPointLocalToWorld(tri[2], x, y, headingDeg),
-  ];
-}
-
-export type CollisionResult = {
-  collidingBoatIds: Set<string>;
-  pairs: Array<[string, string]>;
-  contacts: Point[]; // approximate contact points for markers
-};
-
-/**
- * Detect hull contact using the real BOAT_PATH geometry (flattened + triangulated).
- * Future boat shapes can be supported by passing a different path string.
- */
 export function detectBoatCollisions(
   boats: Boat[],
   opts?: { hullPath?: string },
-): CollisionResult {
+): {
+  collidingBoatIds: Set<string>;
+  pairs: Array<[string, string]>;
+  contacts: Point[];
+} {
   const hullPath = opts?.hullPath ?? BOAT_PATH;
-  const { tris } = getShape(hullPath);
+  const hullLocal = getHullLocal(hullPath);
 
   const collidingBoatIds = new Set<string>();
   const pairs: Array<[string, string]> = [];
   const contacts: Point[] = [];
-
-  // Precompute transformed triangles per boat
-  const trisByBoatId = new Map<string, Triangle[]>();
-  for (const b of boats) {
-    trisByBoatId.set(
-      b.id,
-      tris.map((t) => transformTriLocalToWorld(t, b.x, b.y, b.headingDeg)),
-    );
-  }
 
   for (let i = 0; i < boats.length; i++) {
     for (let j = i + 1; j < boats.length; j++) {
       const a = boats[i];
       const b = boats[j];
 
-      const ta = trisByBoatId.get(a.id)!;
-      const tb = trisByBoatId.get(b.id)!;
+      const pa = boatPolyWorld(a, hullLocal);
+      const pb = boatPolyWorld(b, hullLocal);
 
-      let hit = false;
-      for (const t1 of ta) {
-        for (const t2 of tb) {
-          const r = trianglesIntersect(t1, t2);
-          if (r.hit) {
-            hit = true;
-            if (r.contact) contacts.push(r.contact);
-            break;
-          }
-        }
-        if (hit) break;
-      }
-
-      if (hit) {
+      const r = satIntersect(pa, pb);
+      if (r.hit) {
         collidingBoatIds.add(a.id);
         collidingBoatIds.add(b.id);
         pairs.push([a.id, b.id]);
+        contacts.push(r.contact);
       }
     }
   }
 
   return { collidingBoatIds, pairs, contacts };
+}
+
+export function resolveBoatCollisionsJustTouching(
+  boats: Boat[],
+  opts?: { hullPath?: string; iters?: number },
+): Boat[] {
+  const hullPath = opts?.hullPath ?? BOAT_PATH;
+  const hullLocal = getHullLocal(hullPath);
+  const iters = opts?.iters ?? SOLVER_ITERS;
+
+  const out: Boat[] = boats.map((b) => ({ ...b }));
+
+  for (let iter = 0; iter < iters; iter++) {
+    let any = false;
+
+    for (let i = 0; i < out.length; i++) {
+      for (let j = i + 1; j < out.length; j++) {
+        const a = out[i];
+        const b = out[j];
+
+        const pa = boatPolyWorld(a, hullLocal);
+        const pb = boatPolyWorld(b, hullLocal);
+
+        const r = satIntersect(pa, pb);
+        if (!r.hit) continue;
+
+        const depthToResolve = Math.max(r.depth - SLOP, 0);
+        if (depthToResolve <= 0) continue;
+
+        const n = normalize(r.axis);
+        const push = mul(n, depthToResolve);
+
+        a.x -= push.x * 0.5;
+        a.y -= push.y * 0.5;
+        b.x += push.x * 0.5;
+        b.y += push.y * 0.5;
+
+        any = true;
+      }
+    }
+
+    if (!any) break;
+  }
+
+  return out;
+}
+
+export type DragResolveResult = {
+  pos: { x: number; y: number };
+  contact: null | {
+    otherId: string;
+    point: Point;
+    normal: Point;
+    depth: number;
+  };
+};
+
+export function resolveDraggedBoatPositionNoOverlap(params: {
+  movingBoat: Pick<Boat, "id" | "x" | "y" | "headingDeg">;
+  desiredPos: { x: number; y: number };
+  otherBoats: Pick<Boat, "id" | "x" | "y" | "headingDeg">[];
+  hullPath?: string;
+  maxBinarySteps?: number;
+}): DragResolveResult {
+  const hullPath = params.hullPath ?? BOAT_PATH;
+  const hullLocal = getHullLocal(hullPath);
+  const maxBinarySteps = params.maxBinarySteps ?? 10;
+
+  const cur = { x: params.movingBoat.x, y: params.movingBoat.y };
+  const desired = { x: params.desiredPos.x, y: params.desiredPos.y };
+  const delta = sub(desired, cur);
+
+  const deltaLen = Math.hypot(delta.x, delta.y);
+  if (deltaLen < 1e-6) return { pos: cur, contact: null };
+
+  const others = params.otherBoats.filter((b) => b.id !== params.movingBoat.id);
+
+  const testAt = (pos: Point) =>
+    firstCollisionAgainstOthers(
+      { ...params.movingBoat, x: pos.x, y: pos.y },
+      others,
+      hullLocal,
+    );
+
+  // Try desired first
+  const hitDesired = testAt(desired);
+  const contactFromDesired =
+    hitDesired.hit && hitDesired.otherId
+      ? {
+          otherId: hitDesired.otherId,
+          point: hitDesired.contact,
+          normal: normalize(hitDesired.axis),
+          depth: hitDesired.depth,
+        }
+      : null;
+
+  if (!hitDesired.hit) {
+    return { pos: desired, contact: null };
+  }
+
+  // Slide: remove component into the collision normal (keeps motion “along” if possible)
+  const n = normalize(hitDesired.axis);
+  const into = Math.max(0, dot(delta, n));
+  const slideDelta = sub(delta, mul(n, into));
+
+  const slideLen = Math.hypot(slideDelta.x, slideDelta.y);
+  if (slideLen > 1e-6) {
+    const slidPos = add(cur, slideDelta);
+    const hitSlid = testAt(slidPos);
+    if (!hitSlid.hit) {
+      return { pos: slidPos, contact: contactFromDesired };
+    }
+  }
+
+  // Binary search along original delta to stop exactly at contact
+  const hitCur = testAt(cur);
+  if (hitCur.hit) {
+    return { pos: cur, contact: contactFromDesired };
+  }
+
+  let lo = 0;
+  let hi = 1;
+
+  for (let step = 0; step < maxBinarySteps; step++) {
+    const mid = (lo + hi) / 2;
+    const pos = add(cur, mul(delta, mid));
+    const hit = testAt(pos);
+
+    if (!hit.hit) lo = mid;
+    else {
+      if (hit.depth <= SLOP) lo = mid;
+      else hi = mid;
+    }
+  }
+
+  return { pos: add(cur, mul(delta, lo)), contact: contactFromDesired };
 }

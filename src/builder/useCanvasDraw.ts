@@ -22,7 +22,7 @@ import type {
 import { findClosestStepIndex, frameStepMs, sortSteps } from "./utilSteps";
 import { drawStepBadge } from "./drawStepBadge";
 import type { Camera } from "./camera";
-import { detectBoatCollisions } from "../canvas/collision";
+import { detectBoatCollisions, resolveBoatCollisionsJustTouching } from "../canvas/collision";
 import { drawImpactStar } from "../canvas/drawStar";
 
 type Args = {
@@ -87,9 +87,6 @@ export function useCanvasDraw(args: Args) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // ============================================================
-    // Canvas sizing (DPR-safe)
-    // ============================================================
     const rect = canvas.getBoundingClientRect();
     const dpr = window.devicePixelRatio || 1;
 
@@ -101,42 +98,25 @@ export function useCanvasDraw(args: Args) {
       canvas.height = h;
     }
 
-    // Reset transform → CSS pixel space
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    // Clear full canvas in CSS coords
     ctx.clearRect(0, 0, rect.width, rect.height);
 
-    // ============================================================
-    // ✅ CAMERA TRANSFORM (world space begins here)
-    // ============================================================
     ctx.save();
     ctx.translate(camera.x, camera.y);
     ctx.scale(camera.zoom, camera.zoom);
 
-    // ============================================================
-    // WORLD CONTENT (boats, marks, flags, tracks)
-    // ============================================================
-
-    // Grid is world-space now (will zoom/pan correctly)
     drawGrid(ctx, rect.width, rect.height, camera);
-
-    // Wind indicator is world-space for now
     drawWind(ctx, wind, { x: 90, y: 70 });
 
     if (showStartLine) drawStartLine(ctx, startLine);
 
     if (showMarks) {
       for (const m of marks) {
-        drawMark(ctx, m, {
-          showThreeBoatLengthCircle: showMarkThreeBL,
-        });
+        drawMark(ctx, m, { showThreeBoatLengthCircle: showMarkThreeBL });
       }
     }
 
-    // ------------------------------------------------------------
     // Tracks
-    // ------------------------------------------------------------
     ctx.save();
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 6]);
@@ -148,18 +128,13 @@ export function useCanvasDraw(args: Args) {
       if (pts.length < 2) continue;
 
       ctx.beginPath();
-      pts.forEach((pt, i) =>
-        i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y),
-      );
-
+      pts.forEach((pt, i) => (i === 0 ? ctx.moveTo(pt.x, pt.y) : ctx.lineTo(pt.x, pt.y)));
       ctx.strokeStyle = "rgba(0,0,0,0.18)";
       ctx.stroke();
     }
     ctx.restore();
 
-    // ------------------------------------------------------------
-    // Ghost boats (step previews)
-    // ------------------------------------------------------------
+    // Ghost boats
     const snappedNow = snapTime(timeMs, fps);
     const frame = frameStepMs(fps);
 
@@ -190,11 +165,7 @@ export function useCanvasDraw(args: Args) {
 
         drawBoat(
           ctx,
-          {
-            ...poseAtStep,
-            label: "",
-            color: isClosest ? b.color : "#94a3b8",
-          },
+          { ...poseAtStep, label: "", color: isClosest ? b.color : "#94a3b8" },
           { showTransomOverlap: showBoatTransomLines },
         );
 
@@ -205,26 +176,21 @@ export function useCanvasDraw(args: Args) {
       }
     }
 
-    // ------------------------------------------------------------
-    // ✅ Collision detection for CURRENT boats (ALWAYS)
-    // ------------------------------------------------------------
-    const { collidingBoatIds, contacts } = detectBoatCollisions(displayedBoats);
+    // Playback “just touching” unless dragging
+    const draggingBoatId = (canvas as any).__swbDraggingBoatId as string | undefined;
+    const boatsToDraw =
+      draggingBoatId ? displayedBoats : resolveBoatCollisionsJustTouching(displayedBoats, { iters: 5 });
 
-    // ------------------------------------------------------------
-    // Current boats + collision outlines
-    // ------------------------------------------------------------
-    for (const b of displayedBoats) {
+    // Regular collision visuals for what we draw
+    const { collidingBoatIds, contacts } = detectBoatCollisions(boatsToDraw);
+
+    for (const b of boatsToDraw) {
       drawBoat(ctx, b, { showTransomOverlap: showBoatTransomLines });
 
-      // ✅ Always show outline when hulls are actually overlapping
       if (collidingBoatIds.has(b.id)) {
-        drawBoatOutline(ctx, b, {
-          strokeStyle: "rgba(220,38,38,0.95)",
-          lineWidth: 4,
-        });
+        drawBoatOutline(ctx, b, { strokeStyle: "rgba(220,38,38,0.95)", lineWidth: 4 });
       }
 
-      // Hide selection ring while playing
       if (!isPlaying && b.id === selectedBoatId) {
         ctx.save();
         ctx.beginPath();
@@ -237,39 +203,47 @@ export function useCanvasDraw(args: Args) {
       }
     }
 
-    // ------------------------------------------------------------
-    // ✅ Impact stars at contact points (ALWAYS)
-    // ------------------------------------------------------------
     for (const p of contacts) {
       drawImpactStar(ctx, p.x, p.y, { outerR: 11, innerR: 5, points: 5 });
     }
 
-    // ------------------------------------------------------------
+    // ✅ Drag contact overlay (shows even if solver keeps boats non-overlapping)
+    const dragContact = (canvas as any).__swbDragContact as
+      | undefined
+      | { boatId: string; otherId: string; point: { x: number; y: number } };
+
+    if (dragContact) {
+      const a = boatsToDraw.find((b) => b.id === dragContact.boatId);
+      const o = boatsToDraw.find((b) => b.id === dragContact.otherId);
+
+      if (a) {
+        drawBoatOutline(ctx, a, { strokeStyle: "rgba(220,38,38,0.95)", lineWidth: 4 });
+      }
+      if (o) {
+        drawBoatOutline(ctx, o, { strokeStyle: "rgba(220,38,38,0.75)", lineWidth: 3 });
+      }
+
+      drawImpactStar(ctx, dragContact.point.x, dragContact.point.y, {
+        outerR: 11,
+        innerR: 5,
+        points: 5,
+      });
+    }
+
     // Flags
-    // ------------------------------------------------------------
     for (const f of flags) {
       const code = resolveActiveFlagCode(f, flagClipsByFlagId[f.id], timeMs);
       if (!code) continue;
       drawFlag(ctx, f, code, selectedFlagId === f.id);
     }
 
-    // ============================================================
-    // END CAMERA TRANSFORM
-    // ============================================================
     ctx.restore();
 
-    // ============================================================
-    // UI OVERLAY (screen-space only)
-    // ============================================================
     ctx.save();
     ctx.fillStyle = "rgba(0,0,0,0.7)";
     ctx.font = "12px ui-sans-serif, system-ui";
     ctx.textAlign = "left";
-    ctx.fillText(
-      `t = ${formatTime(timeMs)} / ${formatTime(durationMs)}`,
-      12,
-      18,
-    );
+    ctx.fillText(`t = ${formatTime(timeMs)} / ${formatTime(durationMs)}`, 12, 18);
     ctx.restore();
   }, [
     canvasRef,
