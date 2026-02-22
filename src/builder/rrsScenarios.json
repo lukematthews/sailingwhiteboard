@@ -1,0 +1,129 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    {
+      "key": "rrs10-opposite-tacks-upwind",
+      "type": "rrs",
+      "title": "RRS 10 – Opposite Tacks (Upwind)",
+      "desc": "Approach to conflict on opposite tacks, upwind.",
+      "difficulty": "basic",
+      "rules": ["RRS 10"],
+      "tags": ["right-of-way", "tacks", "upwind"],
+      "decisionSummary": "Port-tack boat keeps clear of starboard-tack boat.",
+      "file": {
+        "type": "scenario",
+        "schemaVersion": 1,
+        "scenario": {
+          "key": "rrs10-opposite-tacks-upwind",
+          "title": "RRS 10 – Opposite Tacks (Upwind)",
+          "description": "When boats are on opposite tacks, a port-tack boat shall keep clear of a starboard-tack boat."
+        },
+        "project": {
+          "version": 4,
+          "durationMs": 4000,
+          "fps": 30,
+          "wind": { "fromDeg": 0, "speedKt": 12 },
+          "boats": [
+            {
+              "id": "starboard",
+              "x": 140,
+              "y": 160,
+              "headingDeg": 315,
+              "color": "#16a34a",
+              "label": "Starboard"
+            },
+            {
+              "id": "port",
+              "x": -140,
+              "y": 160,
+              "headingDeg": 45,
+              "color": "#dc2626",
+              "label": "Port"
+            }
+          ],
+          "stepsByBoatId": {
+            "starboard": [
+              { "tMs": 0, "x": 140, "y": 160, "headingDeg": 315 },
+              { "tMs": 3000, "x": 20, "y": 40, "headingDeg": 315 }
+            ],
+            "port": [
+              { "tMs": 0, "x": -140, "y": 160, "headingDeg": 45 },
+              { "tMs": 3000, "x": -20, "y": 40, "headingDeg": 45 }
+            ]
+          },
+          "keyframesByBoatId": {},
+          "marks": [],
+          "startLine": {
+            "committee": { "x": -60, "y": -180 },
+            "pin": { "x": 60, "y": -180 },
+            "startBoatId": null
+          },
+          "flags": [],
+          "flagClipsByFlagId": {}
+        }
+      }
+    },
+    {
+      "key": "rrs10-opposite-tacks-downwind",
+      "type": "rrs",
+      "title": "RRS 10 – Opposite Tacks (Downwind)",
+      "desc": "Approach to conflict on opposite tacks, downwind.",
+      "difficulty": "basic",
+      "rules": ["RRS 10"],
+      "tags": ["right-of-way", "tacks", "downwind"],
+      "decisionSummary": "Port-tack boat keeps clear of starboard-tack boat.",
+      "file": {
+        "type": "scenario",
+        "schemaVersion": 1,
+        "scenario": {
+          "key": "rrs10-opposite-tacks-downwind",
+          "title": "RRS 10 – Opposite Tacks (Downwind)",
+          "description": "When boats are on opposite tacks, a port-tack boat shall keep clear of a starboard-tack boat."
+        },
+        "project": {
+          "version": 4,
+          "durationMs": 4000,
+          "fps": 30,
+          "wind": { "fromDeg": 0, "speedKt": 12 },
+          "boats": [
+            {
+              "id": "starboard",
+              "x": 140,
+              "y": -160,
+              "headingDeg": 225,
+              "color": "#16a34a",
+              "label": "Starboard"
+            },
+            {
+              "id": "port",
+              "x": -140,
+              "y": -160,
+              "headingDeg": 135,
+              "color": "#dc2626",
+              "label": "Port"
+            }
+          ],
+          "stepsByBoatId": {
+            "starboard": [
+              { "tMs": 0, "x": 140, "y": -160, "headingDeg": 225 },
+              { "tMs": 3000, "x": 20, "y": -40, "headingDeg": 225 }
+            ],
+            "port": [
+              { "tMs": 0, "x": -140, "y": -160, "headingDeg": 135 },
+              { "tMs": 3000, "x": -20, "y": -40, "headingDeg": 135 }
+            ]
+          },
+          "keyframesByBoatId": {},
+          "marks": [],
+          "startLine": {
+            "committee": { "x": -60, "y": -180 },
+            "pin": { "x": 60, "y": -180 },
+            "startBoatId": null
+          },
+          "flags": [],
+          "flagClipsByFlagId": {}
+        }
+      }
+    }
+  ]
+}
