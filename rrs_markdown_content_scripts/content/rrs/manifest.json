@@ -1,0 +1,145 @@
+{
+  "schemaVersion": 1,
+  "generatedAtIso": "2026-02-22T21:09:29Z",
+  "root": "content/rrs",
+  "parts": [
+    {
+      "key": "part1",
+      "title": "Part 1 – Fundamental Rules",
+      "rules": [
+        {
+          "id": "1",
+          "title": "Safety",
+          "file": "part1/01-safety.md"
+        },
+        {
+          "id": "2",
+          "title": "Fair Sailing",
+          "file": "part1/02-fair-sailing.md"
+        },
+        {
+          "id": "3",
+          "title": "Decision to Race",
+          "file": "part1/03-decision-to-race.md"
+        },
+        {
+          "id": "4",
+          "title": "Acceptance of the Rules",
+          "file": "part1/04-acceptance-of-the-rules.md"
+        },
+        {
+          "id": "5",
+          "title": "Rules Governing Organizing Authorities and Officials",
+          "file": "part1/05-rules-governing-organizing-authorities-and-officials.md"
+        },
+        {
+          "id": "6",
+          "title": "World Sailing Regulations",
+          "file": "part1/06-world-sailing-regulations.md"
+        }
+      ],
+      "sections": []
+    },
+    {
+      "key": "part2",
+      "title": "Part 2 – When Boats Meet",
+      "rules": [],
+      "sections": [
+        {
+          "key": "sectionA",
+          "title": "Section A – Right of Way",
+          "rules": [
+            {
+              "id": "10",
+              "title": "On Opposite Tacks",
+              "file": "part2/sectionA/10-on-opposite-tacks.md"
+            },
+            {
+              "id": "11",
+              "title": "On the Same Tack, Overlapped",
+              "file": "part2/sectionA/11-on-the-same-tack-overlapped.md"
+            },
+            {
+              "id": "12",
+              "title": "On the Same Tack, Not Overlapped",
+              "file": "part2/sectionA/12-on-the-same-tack-not-overlapped.md"
+            },
+            {
+              "id": "13",
+              "title": "While Tacking",
+              "file": "part2/sectionA/13-while-tacking.md"
+            }
+          ]
+        },
+        {
+          "key": "sectionB",
+          "title": "Section B – General Limitations",
+          "rules": [
+            {
+              "id": "14",
+              "title": "Avoiding Contact",
+              "file": "part2/sectionB/14-avoiding-contact.md"
+            },
+            {
+              "id": "15",
+              "title": "Acquiring Right of Way",
+              "file": "part2/sectionB/15-acquiring-right-of-way.md"
+            },
+            {
+              "id": "16",
+              "title": "Changing Course",
+              "file": "part2/sectionB/16-changing-course.md"
+            },
+            {
+              "id": "17",
+              "title": "On the Same Tack; Proper Course",
+              "file": "part2/sectionB/17-on-the-same-tack-proper-course.md"
+            }
+          ]
+        },
+        {
+          "key": "sectionC",
+          "title": "Section C – At Marks and Obstructions",
+          "rules": [
+            {
+              "id": "18",
+              "title": "Mark-Room",
+              "file": "part2/sectionC/18-mark-room.md"
+            },
+            {
+              "id": "19",
+              "title": "Room to Pass an Obstruction",
+              "file": "part2/sectionC/19-room-to-pass-an-obstruction.md"
+            },
+            {
+              "id": "20",
+              "title": "Room to Tack at an Obstruction",
+              "file": "part2/sectionC/20-room-to-tack-at-an-obstruction.md"
+            }
+          ]
+        },
+        {
+          "key": "sectionD",
+          "title": "Section D – Other Rules",
+          "rules": [
+            {
+              "id": "21",
+              "title": "Starting Errors; Taking Penalties; Backing a Sail",
+              "file": "part2/sectionD/21-starting-errors-taking-penalties-backing-a-sail.md"
+            },
+            {
+              "id": "22",
+              "title": "Capsized, Anchored or Aground; Rescuing",
+              "file": "part2/sectionD/22-capsized-anchored-or-aground-rescuing.md"
+            },
+            {
+              "id": "23",
+              "title": "Interfering with Another Boat",
+              "file": "part2/sectionD/23-interfering-with-another-boat.md"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

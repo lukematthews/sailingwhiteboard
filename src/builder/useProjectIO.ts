@@ -39,6 +39,11 @@ export type ScenarioFile = {
     key?: string;
     createdAtIso?: string;
   };
+  /** Scenario-driven UI defaults (optional). */
+  ui?: {
+    /** Whether the start line should be visible when this scenario is loaded. */
+    showStartLine?: boolean;
+  };
   project: ProjectFile;
 };
 
@@ -51,6 +56,7 @@ type Args = {
   marks: Mark[];
   wind: Wind;
   startLine: StartLine;
+  showStartLine: boolean;
   flags: Flag[];
   flagClipsByFlagId: FlagClipsByFlagId;
 
@@ -62,6 +68,7 @@ type Args = {
   setMarks: React.Dispatch<React.SetStateAction<Mark[]>>;
   setWind: React.Dispatch<React.SetStateAction<Wind>>;
   setStartLine: React.Dispatch<React.SetStateAction<StartLine>>;
+  setShowStartLine: (v: boolean) => void;
   setFlags: React.Dispatch<React.SetStateAction<Flag[]>>;
   setFlagClipsByFlagId: React.Dispatch<React.SetStateAction<FlagClipsByFlagId>>;
 
@@ -91,6 +98,7 @@ export function useProjectIO(args: Args) {
     marks,
     wind,
     startLine,
+    showStartLine,
     flags,
     flagClipsByFlagId,
 
@@ -102,6 +110,7 @@ export function useProjectIO(args: Args) {
     setMarks,
     setWind,
     setStartLine,
+    setShowStartLine,
     setFlags,
     setFlagClipsByFlagId,
 
@@ -136,6 +145,9 @@ export function useProjectIO(args: Args) {
         title: "Custom Scenario",
         createdAtIso: new Date().toISOString(),
       },
+      ui: {
+        showStartLine,
+      },
       project,
     };
 
@@ -151,6 +163,7 @@ export function useProjectIO(args: Args) {
     startLine,
     flags,
     flagClipsByFlagId,
+    showStartLine,
     setExportText,
   ]);
 
@@ -246,12 +259,15 @@ export function useProjectIO(args: Args) {
           title: "Loaded Scenario",
           createdAtIso: new Date().toISOString(),
         },
+        ui: {
+          showStartLine,
+        },
         project,
       };
 
       setExportText(JSON.stringify(scenario, null, 2));
     },
-    [applyProject, setExportText],
+    [applyProject, setExportText, showStartLine],
   );
 
   const importProject = useCallback(
@@ -264,7 +280,11 @@ export function useProjectIO(args: Args) {
 
         // ✅ New scenario wrapper
         if (isScenarioFile(parsed)) {
-          applyProject((parsed as ScenarioFile).project);
+          const sf = parsed as ScenarioFile;
+          if (typeof sf.ui?.showStartLine === "boolean") {
+            setShowStartLine(sf.ui.showStartLine);
+          }
+          applyProject(sf.project);
           return;
         }
 
@@ -274,7 +294,7 @@ export function useProjectIO(args: Args) {
         // ignore parse errors
       }
     },
-    [applyProject, exportText],
+    [applyProject, exportText, setShowStartLine],
   );
 
   return { exportProject, importProject, loadProject };

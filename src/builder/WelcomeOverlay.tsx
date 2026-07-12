@@ -1,27 +1,52 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { SCENARIOS, type ScenarioDefinition, type ScenarioKey } from "./scenarios";
+import {
+  SCENARIOS,
+  type ScenarioDefinition,
+  type ScenarioKey,
+} from "./scenarios";
 import { useIsMobile } from "./useIsMobile";
 import rulesRaw from "./rrsRules.json";
+
+type RrsRule = {
+  id: string;
+  title?: string;
+  markdown?: string;
+};
+
+type RrsRulesSection = {
+  key: string;
+  title: string;
+  rules: RrsRule[];
+};
+
+type RrsRulesPart = {
+  key: string;
+  title: string;
+  rules?: RrsRule[]; // some parts may have direct rules
+  sections?: RrsRulesSection[];
+};
 
 type RrsRulesJson = {
   schemaVersion: number;
   source?: { publisher?: string; edition?: string; notes?: string };
-  rules: { id: string; title?: string; ruleText?: string }[];
+  parts: RrsRulesPart[];
 };
 
 function normalize(s: string) {
   return s.trim().toLowerCase();
 }
 
-function uniqSorted(values: string[]) {
-  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
+/** Accept "10" or "RRS 10" etc, normalize to "10" */
+function normalizeRuleId(raw: string) {
+  const s = raw.trim();
+  const m = /^rrs\s*(.+)$/i.exec(s);
+  return (m ? m[1] : s).trim();
 }
 
 function ScenarioCard(p: {
   scenario: ScenarioDefinition;
   onPick: (key: ScenarioKey) => void;
   showRrsMeta?: boolean;
-  ruleIndex: Map<string, { title?: string; ruleText?: string }>;
 }) {
   const s = p.scenario;
   const rules = Array.isArray(s.rules) ? s.rules : [];
@@ -40,7 +65,9 @@ function ScenarioCard(p: {
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="text-sm font-semibold text-slate-900">{s.title}</div>
+            <div className="text-sm font-semibold text-slate-900">
+              {s.title}
+            </div>
 
             {s.badge ? (
               <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
@@ -61,11 +88,14 @@ function ScenarioCard(p: {
             ) : null}
           </div>
 
-          {s.desc ? <div className="mt-1 text-[13px] text-slate-600">{s.desc}</div> : null}
+          {s.desc ? (
+            <div className="mt-1 text-[13px] text-slate-600">{s.desc}</div>
+          ) : null}
 
           {p.showRrsMeta && s.decisionSummary ? (
             <div className="mt-2 text-[12px] text-slate-700">
-              <span className="font-semibold">Decision:</span> {s.decisionSummary}
+              <span className="font-semibold">Decision:</span>{" "}
+              {s.decisionSummary}
             </div>
           ) : null}
 
@@ -81,47 +111,6 @@ function ScenarioCard(p: {
               ))}
             </div>
           ) : null}
-
-          {/* Rule text (collapsible) */}
-          {p.showRrsMeta && rules.length ? (
-            <div className="mt-3">
-              <details
-                className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <summary className="cursor-pointer text-xs font-semibold text-slate-700">
-                  Rule text
-                </summary>
-
-                <div className="mt-2 space-y-3">
-                  {rules.map((rid) => {
-                    const info = p.ruleIndex.get(rid);
-                    const title = info?.title ? ` — ${info.title}` : "";
-                    const txt = (info?.ruleText ?? "").trim();
-
-                    return (
-                      <div key={rid} className="rounded-lg bg-white p-2 ring-1 ring-slate-200">
-                        <div className="text-xs font-semibold text-slate-800">
-                          {rid}
-                          {title}
-                        </div>
-                        {txt ? (
-                          <div className="mt-1 whitespace-pre-wrap text-[12px] text-slate-700">
-                            {txt}
-                          </div>
-                        ) : (
-                          <div className="mt-1 text-[12px] text-slate-500">
-                            Rule text not included yet. Paste the official wording into
-                            <span className="font-mono"> rrsRules.json</span>.
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </details>
-            </div>
-          ) : null}
         </div>
 
         <div className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700 group-hover:bg-slate-100">
@@ -132,6 +121,18 @@ function ScenarioCard(p: {
   );
 }
 
+function matchesRule(s: ScenarioDefinition, ruleId: string) {
+  const canon = normalizeRuleId(ruleId);
+  const rules = Array.isArray(s.rules) ? s.rules : [];
+  return rules.some((r) => normalizeRuleId(String(r)) === canon);
+}
+
+function mdSnippet(md: string, maxChars = 320) {
+  const t = md.replace(/\r\n/g, "\n").trim();
+  if (t.length <= maxChars) return t;
+  return t.slice(0, maxChars).trimEnd() + "…";
+}
+
 export function WelcomeOverlay(props: {
   open: boolean;
   onClose: () => void;
@@ -139,8 +140,13 @@ export function WelcomeOverlay(props: {
   onDontShowAgainChange?: (v: boolean) => void;
   dontShowAgain?: boolean;
 }) {
-  const { open, onClose, onPickScenario, dontShowAgain, onDontShowAgainChange } =
-    props;
+  const {
+    open,
+    onClose,
+    onPickScenario,
+    dontShowAgain,
+    onDontShowAgainChange,
+  } = props;
 
   const isMobile = useIsMobile(900);
 
@@ -156,27 +162,10 @@ export function WelcomeOverlay(props: {
     };
   }, [open]);
 
-  const rulesIndex = useMemo(() => {
-    const rr = rulesRaw as unknown as RrsRulesJson;
-    const m = new Map<string, { title?: string; ruleText?: string }>();
-    const list = Array.isArray(rr?.rules) ? rr.rules : [];
-    for (const r of list) {
-      if (!r || typeof r !== "object") continue;
-      if (typeof (r as any).id !== "string") continue;
-      m.set((r as any).id, {
-        title: typeof (r as any).title === "string" ? (r as any).title : undefined,
-        ruleText:
-          typeof (r as any).ruleText === "string" ? (r as any).ruleText : undefined,
-      });
-    }
-    return m;
-  }, []);
-
   const scenariosAll = useMemo(() => {
     const list = SCENARIOS.filter((s) => !s.hidden);
-
-    // keep “Recommended” at the top within each list
-    const score = (s: ScenarioDefinition) => (s.badge === "Recommended" ? 0 : 1);
+    const score = (s: ScenarioDefinition) =>
+      s.badge === "Recommended" ? 0 : 1;
     return list.slice().sort((a, b) => score(a) - score(b));
   }, []);
 
@@ -190,51 +179,119 @@ export function WelcomeOverlay(props: {
     [scenariosAll],
   );
 
-  const [tab, setTab] = useState<"quick" | "rrs">("quick");
-  const [q, setQ] = useState("");
-  const [ruleFilter, setRuleFilter] = useState<string | null>(null);
-  const [difficultyFilter, setDifficultyFilter] =
-    useState<ScenarioDefinition["difficulty"] | null>(null);
+  const rrs = rulesRaw as unknown as RrsRulesJson;
 
-  // reset filters when leaving the RRS tab
+  // Flatten the rules tree into a list, but preserve part/section grouping for UI.
+  const rulesTree = useMemo(() => {
+    const parts = Array.isArray(rrs?.parts) ? rrs.parts : [];
+    return parts.map((p) => {
+      const directRules = Array.isArray(p.rules) ? p.rules : [];
+      const sections = Array.isArray(p.sections) ? p.sections : [];
+      return {
+        key: p.key,
+        title: p.title,
+        directRules,
+        sections,
+      };
+    });
+  }, [rrs]);
+
+  const rulesIndex = useMemo(() => {
+    const m = new Map<string, RrsRule>();
+
+    for (const part of rulesTree) {
+      for (const r of part.directRules) {
+        const canon = normalizeRuleId(r.id);
+        m.set(canon, r);
+        m.set(`RRS ${canon}`, r);
+      }
+      for (const sec of part.sections) {
+        for (const r of sec.rules) {
+          const canon = normalizeRuleId(r.id);
+          m.set(canon, r);
+          m.set(`RRS ${canon}`, r);
+        }
+      }
+    }
+
+    return m;
+  }, [rulesTree]);
+
+  const [tab, setTab] = useState<"quick" | "rrs">("quick");
+
+  // RRS browser state
+  const [q, setQ] = useState("");
+  const [selectedRuleId, setSelectedRuleId] = useState<string | null>(null);
+  const [ruleModalOpen, setRuleModalOpen] = useState(false);
+
+  // reset RRS selection when leaving tab
   useEffect(() => {
     if (tab !== "rrs") {
       setQ("");
-      setRuleFilter(null);
-      setDifficultyFilter(null);
+      setSelectedRuleId(null);
+      setRuleModalOpen(false);
     }
   }, [tab]);
 
-  const allRuleIds = useMemo(() => {
-    const ids: string[] = [];
-    for (const s of rrsScenarios) {
-      if (Array.isArray(s.rules)) ids.push(...s.rules);
-    }
-    return uniqSorted(ids);
-  }, [rrsScenarios]);
-
-  const filteredRrs = useMemo(() => {
+  const filteredRules = useMemo(() => {
     const query = normalize(q);
+    if (!query) return null; // no filtering
 
-    return rrsScenarios.filter((s) => {
-      if (ruleFilter && !(s.rules || []).includes(ruleFilter)) return false;
-      if (difficultyFilter && s.difficulty !== difficultyFilter) return false;
+    // We filter inside the tree: keep parts/sections that match.
+    const partMatches: {
+      partKey: string;
+      partTitle: string;
+      sections: { key: string; title: string; rules: RrsRule[] }[];
+      directRules: RrsRule[];
+    }[] = [];
 
-      if (!query) return true;
+    for (const p of rulesTree) {
+      const directRules = (p.directRules || []).filter((r) => {
+        const hay =
+          `${r.id} ${r.title ?? ""} ${r.markdown ?? ""}`.toLowerCase();
+        return hay.includes(query);
+      });
 
-      const hay = [
-        s.title,
-        s.desc ?? "",
-        s.decisionSummary ?? "",
-        ...(s.rules ?? []),
-        ...(s.tags ?? []),
-      ]
-        .join(" ")
-        .toLowerCase();
+      const sections = (p.sections || [])
+        .map((s) => {
+          const rules = (s.rules || []).filter((r) => {
+            const hay =
+              `${r.id} ${r.title ?? ""} ${r.markdown ?? ""}`.toLowerCase();
+            return hay.includes(query);
+          });
+          return { key: s.key, title: s.title, rules };
+        })
+        .filter((s) => s.rules.length > 0);
 
-      return hay.includes(query);
-    });
-  }, [rrsScenarios, q, ruleFilter, difficultyFilter]);
+      if (directRules.length || sections.length) {
+        partMatches.push({
+          partKey: p.key,
+          partTitle: p.title,
+          sections,
+          directRules,
+        });
+      }
+    }
+
+    return partMatches;
+  }, [rulesTree, q]);
+
+  const selectedRule = useMemo(() => {
+    if (!selectedRuleId) return null;
+    const canon = normalizeRuleId(selectedRuleId);
+    return (
+      rulesIndex.get(selectedRuleId) ??
+      rulesIndex.get(canon) ??
+      rulesIndex.get(`RRS ${canon}`) ??
+      null
+    );
+  }, [rulesIndex, selectedRuleId]);
+
+  const scenariosForSelectedRule = useMemo(() => {
+    if (!selectedRuleId) return [];
+    const canon = normalizeRuleId(selectedRuleId);
+    return rrsScenarios.filter((s) => matchesRule(s, canon));
+  }, [rrsScenarios, selectedRuleId]);
 
   if (!open) return null;
 
@@ -255,7 +312,9 @@ export function WelcomeOverlay(props: {
       </div>
 
       <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-        <div className="text-xs font-semibold text-slate-700">3) Move + Replay</div>
+        <div className="text-xs font-semibold text-slate-700">
+          3) Move + Replay
+        </div>
         <div className="mt-1 text-[13px] text-slate-600">
           Long-press an item to drag it. Add steps, then press play.
         </div>
@@ -326,12 +385,7 @@ export function WelcomeOverlay(props: {
 
         <div className="grid gap-3 md:grid-cols-2">
           {quickStartScenarios.map((s) => (
-            <ScenarioCard
-              key={s.key}
-              scenario={s}
-              onPick={onPickScenario}
-              ruleIndex={rulesIndex}
-            />
+            <ScenarioCard key={s.key} scenario={s} onPick={onPickScenario} />
           ))}
         </div>
       </div>
@@ -366,115 +420,228 @@ export function WelcomeOverlay(props: {
     </div>
   );
 
-  const Chip = (p: {
-    label: string;
-    active: boolean;
-    onClick: () => void;
-    title?: string;
-  }) => (
-    <button
-      type="button"
-      onClick={p.onClick}
-      title={p.title}
-      className={
-        p.active
-          ? "rounded-full bg-slate-900 px-3 py-1.5 text-sm text-white"
-          : "rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-200"
-      }
-    >
-      {p.label}
-    </button>
-  );
+  const RuleRow = (p: { rule: RrsRule }) => {
+    const rid = normalizeRuleId(p.rule.id);
+    const hasScenarios = rrsScenarios.some((s) => matchesRule(s, rid));
 
-  const RrsBody = () => (
-    <div className="px-5 py-4 sm:px-6 sm:py-5">
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setSelectedRuleId(rid);
+          setRuleModalOpen(true);
+        }}
+        className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-left hover:bg-slate-50"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[13px] font-semibold text-slate-900">
+              RRS {rid} {p.rule.title ? `— ${p.rule.title}` : ""}
+            </div>
+            {p.rule.markdown ? (
+              <div className="mt-1 text-[12px] text-slate-600 whitespace-pre-wrap">
+                {mdSnippet(p.rule.markdown, 140)}
+              </div>
+            ) : null}
+          </div>
+          <div className="shrink-0 text-[11px] text-slate-600">
+            {hasScenarios ? "Scenarios →" : "No scenarios"}
+          </div>
+        </div>
+      </button>
+    );
+  };
+
+  const RulesBrowser = () => {
+    const tree = filteredRules ?? rulesTree;
+
+    return (
       <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
-        <div className="text-sm font-semibold text-slate-900">Browse by rule</div>
+        <div className="text-sm font-semibold text-slate-900">RRS rules</div>
         <div className="mt-1 text-[13px] text-slate-600">
-          Search scenarios, filter by rule, and open one to start replaying.
+          Browse Parts/Sections. Tap a rule to view details and scenarios.
         </div>
 
         <div className="mt-3">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Search (e.g. 'inside overlap', 'RRS 18', 'zone')"
+            placeholder="Search rules (e.g. 'mark-room', '18.1', 'zone')"
             className="w-full rounded-xl bg-white px-3 py-2 text-sm text-slate-900 ring-1 ring-slate-200"
           />
         </div>
 
-        <div className="mt-3 space-y-2">
-          <div className="text-xs font-semibold text-slate-700">Difficulty</div>
-          <div className="flex flex-wrap gap-2">
-            <Chip
-              label="All"
-              active={!difficultyFilter}
-              onClick={() => setDifficultyFilter(null)}
-            />
-            <Chip
-              label="Basic"
-              active={difficultyFilter === "basic"}
-              onClick={() => setDifficultyFilter("basic")}
-            />
-            <Chip
-              label="Intermediate"
-              active={difficultyFilter === "intermediate"}
-              onClick={() => setDifficultyFilter("intermediate")}
-            />
-            <Chip
-              label="Advanced"
-              active={difficultyFilter === "advanced"}
-              onClick={() => setDifficultyFilter("advanced")}
-            />
-          </div>
-        </div>
+        <div className="mt-3 space-y-3">
+          {tree.length ? (
+            tree.map((p: any) => (
+              <details
+                key={p.key}
+                className="rounded-2xl bg-white p-3 ring-1 ring-slate-200"
+                open
+              >
+                <summary className="cursor-pointer select-none text-sm font-semibold text-slate-900">
+                  {p.title}
+                </summary>
 
-        <div className="mt-3 space-y-2">
-          <div className="text-xs font-semibold text-slate-700">Rules</div>
-          <div className="flex flex-wrap gap-2">
-            <Chip
-              label="All"
-              active={!ruleFilter}
-              onClick={() => setRuleFilter(null)}
-            />
-            {allRuleIds.map((rid) => (
-              <Chip
-                key={rid}
-                label={rid}
-                active={ruleFilter === rid}
-                onClick={() => setRuleFilter((prev) => (prev === rid ? null : rid))}
-                title={rulesIndex.get(rid)?.title}
-              />
-            ))}
-          </div>
-        </div>
+                <div className="mt-3 space-y-2">
+                  {Array.isArray(p.directRules) && p.directRules.length ? (
+                    <div className="space-y-2">
+                      {p.directRules.map((r: RrsRule) => (
+                        <RuleRow key={r.id} rule={r} />
+                      ))}
+                    </div>
+                  ) : null}
 
-        <div className="mt-3 text-[12px] text-slate-600">
-          Showing <span className="font-semibold">{filteredRrs.length}</span> scenario(s).
+                  {Array.isArray(p.sections) && p.sections.length ? (
+                    <div className="space-y-3">
+                      {p.sections.map((s: any) => (
+                        <details
+                          key={s.key}
+                          className="rounded-2xl bg-slate-50 p-3 ring-1 ring-slate-200"
+                          open
+                        >
+                          <summary className="cursor-pointer select-none text-[13px] font-semibold text-slate-800">
+                            {s.title}
+                          </summary>
+                          <div className="mt-3 space-y-2">
+                            {(s.rules || []).map((r: RrsRule) => (
+                              <RuleRow key={r.id} rule={r} />
+                            ))}
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </details>
+            ))
+          ) : (
+            <div className="rounded-2xl bg-white p-4 text-sm text-slate-600 ring-1 ring-slate-200">
+              No rules match that search.
+            </div>
+          )}
         </div>
       </div>
+    );
+  };
 
-      <div className="mt-4 grid gap-3 md:grid-cols-2">
-        {filteredRrs.length ? (
-          filteredRrs.map((s) => (
-            <ScenarioCard
-              key={s.key}
-              scenario={s}
-              onPick={onPickScenario}
-              showRrsMeta
-              ruleIndex={rulesIndex}
-            />
-          ))
-        ) : (
-          <div className="rounded-2xl bg-white p-4 text-sm text-slate-600 ring-1 ring-slate-200">
-            No scenarios match that filter yet.
-            <div className="mt-2 text-[12px] text-slate-500">
-              Add entries to <span className="font-mono">scenarios.json</span> with
-              <span className="font-mono"> type: "rrs"</span>.
+  const RuleDetailModal = () => {
+    if (!ruleModalOpen || !selectedRuleId) return null;
+
+    const rid = normalizeRuleId(selectedRuleId);
+    const r = selectedRule;
+
+    return (
+      <div className="fixed inset-0 z-[120]">
+        <div
+          className="absolute inset-0 bg-slate-900/50"
+          onClick={() => setRuleModalOpen(false)}
+          role="button"
+          tabIndex={-1}
+        />
+
+        <div
+          className="absolute inset-0 flex items-end justify-center sm:items-center p-3"
+          style={{
+            paddingBottom: "env(safe-area-inset-bottom)",
+            paddingTop: "env(safe-area-inset-top)",
+          }}
+        >
+          <div className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-xl ring-1 ring-slate-200">
+            {/* Sticky header */}
+            <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-slate-900">
+                    RRS {rid} {r?.title ? `— ${r.title}` : ""}
+                  </div>
+                  <div className="mt-0.5 text-[12px] text-slate-600">
+                    {scenariosForSelectedRule.length} scenario(s)
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRuleModalOpen(false)}
+                  className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100 active:scale-[0.99]"
+                  aria-label="Close rule"
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            <div className="max-h-[80vh] overflow-auto p-4 space-y-4">
+              {/* Rule text */}
+              <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200">
+                <div className="text-xs font-semibold text-slate-700">
+                  Rule text (Markdown)
+                </div>
+                {r?.markdown ? (
+                  <div className="mt-2 whitespace-pre-wrap text-[13px] text-slate-800">
+                    {r.markdown}
+                  </div>
+                ) : (
+                  <div className="mt-2 text-[13px] text-slate-600">
+                    No markdown found for this rule in{" "}
+                    <span className="font-mono">rrsRules.json</span>.
+                  </div>
+                )}
+              </div>
+
+              {/* Scenarios */}
+              <div>
+                <div className="mb-2 text-sm font-semibold text-slate-900">
+                  Scenarios for this rule
+                </div>
+
+                {scenariosForSelectedRule.length ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {scenariosForSelectedRule.map((s) => (
+                      <ScenarioCard
+                        key={s.key}
+                        scenario={s}
+                        onPick={(k) => {
+                          setRuleModalOpen(false);
+                          onPickScenario(k);
+                        }}
+                        showRrsMeta
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl bg-white p-4 text-sm text-slate-600 ring-1 ring-slate-200">
+                    No scenarios yet for RRS {rid}.
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 border-t border-slate-200 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setRuleModalOpen(false)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 active:scale-[0.99]"
+                >
+                  Back to rules
+                </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm text-white hover:bg-slate-800 active:scale-[0.99]"
+                >
+                  Close overlay
+                </button>
+              </div>
             </div>
           </div>
-        )}
+        </div>
       </div>
+    );
+  };
+
+  const RrsBody = () => (
+    <div className="px-5 py-4 sm:px-6 sm:py-5">
+      <RulesBrowser />
 
       <div className="mt-5 flex items-center justify-end gap-2 border-t border-slate-200 pt-4">
         <button
@@ -492,6 +659,8 @@ export function WelcomeOverlay(props: {
           Close
         </button>
       </div>
+
+      <RuleDetailModal />
     </div>
   );
 

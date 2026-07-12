@@ -5,10 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "npm run rrs:static && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "start": "serve -s dist -l ${PORT}"
+    "start": "serve -s dist -l ${PORT}",
+    "rrs:static": "node scripts/build-rrs-static-pages.mjs"
   },
   "dependencies": {
     "@emotion/react": "11.14.0",
@@ -17,9 +18,12 @@
     "@mui/material": "7.3.8",
     "@tailwindcss/vite": "4.1.18",
     "antd": "6.3.0",
+    "markdown-it": "14.1.1",
+    "markdown-it-anchor": "9.2.0",
     "react": "^19.2.0",
     "react-aria-components": "1.15.1",
     "react-dom": "^19.2.0",
+    "react-markdown": "10.1.0",
     "serve": "14.2.5"
   },
   "devDependencies": {

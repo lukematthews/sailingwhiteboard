@@ -124,7 +124,6 @@ export function useCanvasDraw(args: Args) {
     // ============================================================
 
     drawGrid(ctx, rect.width, rect.height, camera);
-    drawWind(ctx, wind, { x: 90, y: 70 });
 
     if (showStartLine) drawStartLine(ctx, startLine);
 
@@ -352,6 +351,11 @@ export function useCanvasDraw(args: Args) {
     // UI OVERLAY (screen-space only)
     // ============================================================
     ctx.save();
+
+    // ✅ Wind is always pinned to the top-left of the *screen*,
+    // like the time label (not affected by pan/zoom).
+    drawWind(ctx, wind, { x: 70, y: 56 });
+
     ctx.fillStyle = "rgba(0,0,0,0.7)";
     ctx.font = "12px ui-sans-serif, system-ui";
     ctx.textAlign = "left";

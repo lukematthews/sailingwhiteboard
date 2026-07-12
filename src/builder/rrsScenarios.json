@@ -18,6 +18,9 @@
           "title": "RRS 10 – Opposite Tacks (Upwind)",
           "description": "When boats are on opposite tacks, a port-tack boat shall keep clear of a starboard-tack boat."
         },
+        "ui": {
+          "showStartLine": false
+        },
         "project": {
           "version": 4,
           "durationMs": 4000,
@@ -79,6 +82,9 @@
           "key": "rrs10-opposite-tacks-downwind",
           "title": "RRS 10 – Opposite Tacks (Downwind)",
           "description": "When boats are on opposite tacks, a port-tack boat shall keep clear of a starboard-tack boat."
+        },
+        "ui": {
+          "showStartLine": false
         },
         "project": {
           "version": 4,

@@ -1,18 +1,142 @@
 {
   "schemaVersion": 1,
-  "source": {
-    "publisher": "World Sailing",
-    "edition": "2025-2028",
-    "notes": "Fill ruleText from an official licensed copy."
-  },
-  "rules": [
-    { "id": "RRS 10", "title": "On Opposite Tacks", "ruleText": "" },
-    { "id": "RRS 11", "title": "On the Same Tack, Overlapped", "ruleText": "" },
-    { "id": "RRS 12", "title": "On the Same Tack, Not Overlapped", "ruleText": "" },
-    { "id": "RRS 13", "title": "While Tacking", "ruleText": "" },
-    { "id": "RRS 14", "title": "Avoiding Contact", "ruleText": "" },
-    { "id": "RRS 15", "title": "Acquiring Right of Way", "ruleText": "" },
-    { "id": "RRS 16", "title": "Changing Course", "ruleText": "" },
-    { "id": "RRS 18", "title": "Mark-Room", "ruleText": "" }
+  "parts": [
+    {
+      "key": "part1",
+      "title": "Part 1 – Fundamental Rules",
+      "sections": [],
+      "rules": [
+        {
+          "id": "1",
+          "title": "Safety",
+          "markdown": "## Rule 1 – Safety\n\n### 1.1\nHelping Those in Danger\n\nA boat, competitor or support person shall give all possible help to any person or vessel in danger.\n\n### 1.2\nLife-Saving Equipment and Personal Flotation Devices\n\nA boat shall carry adequate life-saving equipment for all persons on board, including one item ready for immediate use, unless her class rules make some other provision. Each competitor is individually responsible for wearing a personal flotation device adequate for the conditions."
+        },
+        {
+          "id": "2",
+          "title": "Fair Sailing",
+          "markdown": "## Rule 2 – Fair Sailing\n\nA boat and her owner shall compete in compliance with recognized principles of sportsmanship and fair play. A boat may be penalized under this rule only if it is clearly established that these principles have been violated. The penalty shall be a disqualification that is not excludable."
+        },
+        {
+          "id": "3",
+          "title": "Decision to Race",
+          "markdown": "## Rule 3 – Decision to Race\n\nThe responsibility for a boat’s decision to participate in a race or to continue racing is hers alone."
+        },
+        {
+          "id": "4",
+          "title": "Acceptance of the Rules",
+          "markdown": "## Rule 4 – Acceptance of the Rules\n\n### 4.1\n(a) By participating or intending to participate in an event\n\nconducted under the rules, each competitor and boat owner agrees to accept the rules.\n(b) A support person by providing support, or a parent or guardian\n\nby permitting their child to enter an event, agrees to accept the rules.\n\n### 4.2\nEach competitor and boat owner agrees, on behalf of their support\n\npersons, that such support persons are bound by the rules.\n\n### 4.3\nAcceptance of the rules includes agreement\n\n(a) to be governed by the rules;  \n(b) to accept the penalties imposed and other action taken under\n\nthe rules, subject to the appeal and review procedures provided\n\nin them, as the final determination of any matter arising under\n\nthe rules;  \n(c) with respect to any such determination, not to resort to any\n\ncourt of law or tribunal not provided for in the rules; and  \n(d) by each competitor and boat owner to ensure that their support\n\npersons are aware of the rules.\n\n### 4.4\nThe person in charge of each boat shall ensure that all competitors in\n\nthe crew and the boat’s owner are aware of their responsibilities\n\nunder this rule.\n\n### 4.5\nThis rule may be changed by a prescription of the national authority\n\nof the venue."
+        },
+        {
+          "id": "5",
+          "title": "Rules Governing Organizing Authorities and Officials",
+          "markdown": "## Rule 5 – Rules Governing Organizing Authorities and Officials\n\nThe organizing authority, a committee and other race officials shall be governed by the rules in the conduct and judging of the event."
+        },
+        {
+          "id": "6",
+          "title": "World Sailing Regulations",
+          "markdown": "## Rule 6 – World Sailing Regulations\n\n### 6.1\nEach competitor, boat owner and support person shall comply with the World Sailing Regulations that have been designated by World Sailing as having the status of a rule. These regulations as of 30 June 2024 are the World Sailing:\n\n● Advertising Code  \n● Anti-Doping Code  \n● Code of Ethics  \n● Eligibility Code  \n● Sailor Categorization Code\n\n### 6.2\nThe rules of Part 5 do not apply unless protests are permitted in the Regulation alleged to have been broken."
+        }
+      ]
+    },
+    {
+      "key": "part2",
+      "title": "Part 2 – When Boats Meet",
+      "sections": [
+        {
+          "key": "sectionA",
+          "title": "Section A – Right of Way",
+          "rules": [
+            {
+              "id": "10",
+              "title": "On Opposite Tacks",
+              "markdown": "## Rule 10 – On Opposite Tacks\n\nWhen boats are on opposite tacks, a port-tack boat shall keep clear of a starboard-tack boat."
+            },
+            {
+              "id": "11",
+              "title": "On the Same Tack, Overlapped",
+              "markdown": "## Rule 11 – On the Same Tack, Overlapped\n\nWhen boats are on the same tack and overlapped, a windward boat shall keep clear of a leeward boat."
+            },
+            {
+              "id": "12",
+              "title": "On the Same Tack, Not Overlapped",
+              "markdown": "## Rule 12 – On the Same Tack, Not Overlapped\n\nWhen boats are on the same tack and not overlapped, a boat clear astern shall keep clear of a boat clear ahead."
+            },
+            {
+              "id": "13",
+              "title": "While Tacking",
+              "markdown": "## Rule 13 – While Tacking\n\nAfter a boat passes head to wind, she shall keep clear of other boats until she is on a close-hauled course. During that time rules 10, 11 and 12 do not apply. If two boats are subject to this rule at the same time, the one on the other’s port side or the one astern shall keep clear."
+            }
+          ]
+        },
+        {
+          "key": "sectionB",
+          "title": "Section B – General Limitations",
+          "rules": [
+            {
+              "id": "14",
+              "title": "Avoiding Contact",
+              "markdown": "## Rule 14 – Avoiding Contact\n\nA boat shall avoid contact with another boat if reasonably possible.\n\nHowever, a right-of-way boat or one entitled to mark-room or room need not act to avoid contact until it is clear that the other boat is not keeping clear or giving room."
+            },
+            {
+              "id": "15",
+              "title": "Acquiring Right of Way",
+              "markdown": "## Rule 15 – Acquiring Right of Way\n\nWhen a boat acquires right of way, she shall initially give the other boat room to keep clear, unless she acquires right of way because of the other boat’s actions."
+            },
+            {
+              "id": "16",
+              "title": "Changing Course",
+              "markdown": "## Rule 16 – Changing Course\n\n### 16.1\nWhen a right-of-way boat changes course, she shall give the other boat room to keep clear.\n\n### 16.2\nIn addition, when after the starting signal a port-tack boat is keeping clear by sailing to pass to leeward of a starboard-tack boat, the starboard-tack boat shall not change course if as a result the port-tack boat would immediately need to change course to continue keeping clear."
+            },
+            {
+              "id": "17",
+              "title": "On the Same Tack; Proper Course",
+              "markdown": "## Rule 17 – On the Same Tack; Proper Course\n\nIf a boat clear astern becomes overlapped within two of her hull lengths to leeward of a boat on the same tack, she shall not sail above her proper course while they remain overlapped within that distance, unless in doing so she promptly sails astern of the other boat."
+            }
+          ]
+        },
+        {
+          "key": "sectionC",
+          "title": "Section C – At Marks and Obstructions",
+          "rules": [
+            {
+              "id": "18",
+              "title": "Mark-Room",
+              "markdown": "### 18.1 When Rule 18 Applies\n\n(a) Rule 18 applies between boats when they are required to leave a mark on the same side and at least one of them is in the zone.\n\nHowever, it does not apply\n\n&nbsp;&nbsp;&nbsp;&nbsp;(1) between boats on opposite tacks on a beat to windward,  \n\n&nbsp;&nbsp;&nbsp;&nbsp;(2) between boats on opposite tacks when the proper course at the mark for one but not both of them is to tack,\n\n&nbsp;&nbsp;&nbsp;&nbsp;(3) between a boat approaching a mark and one leaving it, or\n\n&nbsp;&nbsp;&nbsp;&nbsp;(4) if the mark is a continuing obstruction, in which case rule 19 applies.\n\n(b) Rule 18 no longer applies between boats when mark-room has been given.\n\n### 18.2 Giving Mark-Room\n\n(a) When the first of two boats reaches the zone,\n\n&nbsp;&nbsp;&nbsp;&nbsp;(1) if the boats are overlapped, the outside boat at that moment shall give the inside boat mark-room;\n\n&nbsp;&nbsp;&nbsp;&nbsp;(2) if the boats are not overlapped, the boat that has not reached the zone at that moment shall give the other boat mark-room. When a boat is required to give mark-room by this rule, she shall continue to do so for as long as this rule applies, even if later an overlap is broken or a new overlap begins.\n\n(b) Rule 18.2(a) no longer applies if the boat entitled to mark-room passes head to wind or leaves the zone.\n\n(c) If a boat obtained an overlap inside the zone, the outside boat shall give her mark-room only if the overlap began when the inside boat was keeping clear.\n\n(d) If there is reasonable doubt that a boat obtained or broke an overlap in time, it shall be presumed that she did not.\n\n(e) If a boat obtained an inside overlap from clear astern or by tacking or gybing, she shall not be entitled to mark-room.\n\n### 18.3 Tacking in the Zone\n\nIf a boat in the zone passes head to wind and is then on the same tack as a boat that is fetching the mark, rule 18.2 does not apply. The boat shall not cause the other boat to sail above close-hauled to avoid contact or prevent the other boat from passing the mark on the required side.\n\n### 18.4 Gybing\n\nWhen an inside overlapped right-of-way boat must gybe at a mark to sail her proper course, until she gybes she shall not sail farther from the mark than needed to sail that course. Rule 18.4 does not apply at a gate mark."
+            },
+            {
+              "id": "19",
+              "title": "Room to Pass an Obstruction",
+              "markdown": "## Rule 19 – Room to Pass an Obstruction\n\n### 19.1\nWhen Rule 19 Applies\n\nRule 19 applies between boats when an obstruction is one they are required to leave on the same side and at least one of them is in the zone. However, it does not apply between boats on opposite tacks on a beat to windward.\n\n### 19.2\nGiving Room at an Obstruction\n\n(a) When boats are overlapped, the outside boat shall give the inside boat room between her and the obstruction, unless she has been unable to do so from the time the overlap began.\n(b) When boats are not overlapped, the boat that is clear astern shall give the boat clear ahead room to pass the obstruction.\n\n### 19.3\nTacking at an Obstruction\n\nWhile boats are passing an obstruction, a boat that is required to give room shall not cause the other boat to tack unless she has been unable to give room from the time the overlap began."
+            },
+            {
+              "id": "20",
+              "title": "Room to Tack at an Obstruction",
+              "markdown": "## Rule 20 – Room to Tack at an Obstruction\n\n### 20.1\nHailing\n\nWhen approaching an obstruction, a boat sailing close-hauled or above may hail for room to tack and avoid a boat on the same tack. However, she shall not hail unless\n\n(a) she needs to tack soon to avoid the obstruction; and  \n(b) she is sailing close-hauled or above.\n\n### 20.2\nResponding\n\n(a) After a boat hails, the hailed boat shall respond even if the hail  \nbreaks rule 20.1.\n(b) The hailed boat shall respond by either\n&nbsp;&nbsp;&nbsp;&nbsp;(1) tacking as soon as possible; or  \n&nbsp;&nbsp;&nbsp;&nbsp;(2) immediately replying 'You tack' and then giving the  \nhailing boat room to tack and avoid her.\n(c) When the hailed boat responds by tacking, the hailing boat shall tack as soon as possible.\n\n### 20.3\nPassing On a Hail\n\nIf the hailed boat responds by replying 'You tack', she shall also hail the same words to any boat overlapped to windward of her. That boat shall then respond as required by rule 20.2.\n\n### 20.4\nAdditional Requirements\n\n(a) When a boat hails for room to tack, she shall give the hailed boat time to respond.\n(b) From the time a boat hails until she has tacked and avoided the hailed boat, rule 18.2(a) does not apply between them.\n\n### 20.5\nExoneration\n\nWhen a boat is taking room to tack she is exonerated if she breaks a rule of Section A or rule 15 or 16.1.\n\n### 20.6\nCommunications\n\nThe notice of race may specify an alternative means of communication for a boat to indicate her need for room to tack or her response, and require boats to use it."
+            }
+          ]
+        },
+        {
+          "key": "sectionD",
+          "title": "Section D – Other Rules",
+          "rules": [
+            {
+              "id": "21",
+              "title": "Starting Errors; Taking Penalties; Backing a Sail",
+              "markdown": "## Rule 21 – Starting Errors; Taking Penalties; Backing a Sail\n\n### 21.1\nA boat sailing towards the pre-start side of the starting line or one of\n\nits extensions after her starting signal to start or to comply with rule\n30.1 shall keep clear of a boat not doing so until her hull is\ncompletely on the pre-start side.\n\n### 21.2\nA boat taking a penalty shall keep clear of one that is not.\n\n### 21.3\nA boat moving astern, or sideways to windward, through the water\n\nby backing a sail shall keep clear of one that is not."
+            },
+            {
+              "id": "22",
+              "title": "Capsized, Anchored or Aground; Rescuing",
+              "markdown": "## Rule 22 – Capsized, Anchored or Aground; Rescuing\n\nIf possible, a boat shall avoid a boat that is capsized or has not regained control after capsizing, is anchored or aground, or is trying to help a person or vessel in danger. A boat is capsized when her masthead is in the water."
+            },
+            {
+              "id": "23",
+              "title": "Interfering with Another Boat",
+              "markdown": "## Rule 23 – Interfering with Another Boat\n\n### 23.1\nIf reasonably possible, a boat not racing shall not interfere with a boat that is racing.\n\n### 23.2\nIf reasonably possible, a boat shall not interfere with a boat that is taking a penalty, sailing on another leg or subject to rule 21.1. However, after the starting signal this rule does not apply when the boat is sailing her proper course."
+            }
+          ]
+        }
+      ]
+    }
   ]
 }

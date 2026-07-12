@@ -1,216 +1,398 @@
-// src/builder/RrsLibraryPanel.tsx
 import React, { useMemo, useState } from "react";
-import { SCENARIOS, type ScenarioDefinition, type ScenarioKey } from "./scenarios";
-import rulesRaw from "./rrsRules.json";
+import rrsRules from "./rrsRules.json";
+import rrsScenarios from "./rrsScenarios.json";
+import RuleDetailModal from "./RuleDetailModal";
 
-type RrsRulesJson = {
-  schemaVersion: number;
-  source?: { publisher?: string; edition?: string; notes?: string };
-  rules: { id: string; title?: string; ruleText?: string }[];
+export type RrsRule = {
+  id: string;
+  title: string;
+  markdown: string;
 };
 
-function normalize(s: string) {
-  return s.trim().toLowerCase();
-}
+export type Section = {
+  key: string;
+  title: string;
+  rules: RrsRule[];
+};
 
-function uniqSorted(values: string[]) {
-  return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
-}
+export type Part = {
+  key: string;
+  title: string;
+  sections?: Section[];
+  rules?: RrsRule[];
+};
 
-export default function RrsLibraryPanel(props: {
-  onLoadScenario: (key: ScenarioKey) => void;
-}) {
-  const { onLoadScenario } = props;
+export type RrsScenario = {
+  key: string;
+  title: string;
+  difficulty?: string;
+  tags?: string[];
+  rules: string[];
+};
 
-  const rulesIndex = useMemo(() => {
-    const rr = rulesRaw as unknown as RrsRulesJson;
-    const m = new Map<string, { title?: string; ruleText?: string }>();
-    for (const r of Array.isArray(rr?.rules) ? rr.rules : []) {
-      if (!r?.id) continue;
-      m.set(r.id, { title: r.title, ruleText: r.ruleText });
-    }
-    return m;
-  }, []);
+export type Props = {
+  onLoadScenario: (key: string) => void;
+};
 
-  const rrsScenarios = useMemo(
-    () => SCENARIOS.filter((s) => !s.hidden && s.type === "rrs"),
-    [],
+export default function RrsLibraryPanel({ onLoadScenario }: Props) {
+  const parts = (rrsRules as any).parts as Part[];
+  const scenarios = (rrsScenarios as any).scenarios as RrsScenario[];
+
+  const [query, setQuery] = useState("");
+  const [activeRule, setActiveRule] = useState<{
+    rule: RrsRule;
+    partTitle: string;
+    sectionTitle?: string;
+  } | null>(null);
+
+  const [collapsedParts, setCollapsedParts] = useState<Record<string, boolean>>(
+    {},
   );
+  const [collapsedSections, setCollapsedSections] = useState<
+    Record<string, boolean>
+  >({});
 
-  const allRuleIds = useMemo(() => {
-    const ids: string[] = [];
-    for (const s of rrsScenarios) if (Array.isArray(s.rules)) ids.push(...s.rules);
-    return uniqSorted(ids);
-  }, [rrsScenarios]);
+  // -----------------------------------
+  // Scenario count helper
+  // -----------------------------------
+  const scenarioCount = (ruleId: string) =>
+    scenarios.filter((s) => s.rules.includes(ruleId)).length;
 
-  const [q, setQ] = useState("");
-  const [ruleFilter, setRuleFilter] = useState<string>("all");
-  const [difficulty, setDifficulty] = useState<
-    ScenarioDefinition["difficulty"] | "all"
-  >("all");
+  // -----------------------------------
+  // Filtered structure
+  // -----------------------------------
+  const filteredParts = useMemo(() => {
+    if (!query.trim()) return parts;
 
-  const filtered = useMemo(() => {
-    const query = normalize(q);
+    const q = query.toLowerCase();
 
-    return rrsScenarios.filter((s) => {
-      if (ruleFilter !== "all" && !(s.rules || []).includes(ruleFilter)) return false;
-      if (difficulty !== "all" && s.difficulty !== difficulty) return false;
+    return parts
+      .map((part) => {
+        // Filter direct rules
+        const directRules =
+          part.rules?.filter(
+            (r) =>
+              r.id.toLowerCase().includes(q) ||
+              r.title.toLowerCase().includes(q) ||
+              r.markdown.toLowerCase().includes(q),
+          ) || [];
 
-      if (!query) return true;
-
-      const hay = [
-        s.title,
-        s.desc ?? "",
-        s.decisionSummary ?? "",
-        ...(s.rules ?? []),
-        ...(s.tags ?? []),
-      ]
-        .join(" ")
-        .toLowerCase();
-
-      return hay.includes(query);
-    });
-  }, [rrsScenarios, q, ruleFilter, difficulty]);
-
-  return (
-    <div className="space-y-3">
-      <div className="text-sm font-semibold text-slate-900">RRS Library</div>
-
-      <div className="grid grid-cols-1 gap-2">
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search rules, tags, scenarios…"
-          className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-200"
-        />
-
-        <div className="grid grid-cols-2 gap-2">
-          <select
-            value={ruleFilter}
-            onChange={(e) => setRuleFilter(e.target.value)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="all">All rules</option>
-            {allRuleIds.map((id) => {
-              const title = rulesIndex.get(id)?.title;
-              return (
-                <option key={id} value={id}>
-                  {id}
-                  {title ? ` — ${title}` : ""}
-                </option>
+        // Filter section rules
+        const filteredSections =
+          part.sections
+            ?.map((section) => {
+              const filteredRules = section.rules.filter(
+                (r) =>
+                  r.id.toLowerCase().includes(q) ||
+                  r.title.toLowerCase().includes(q) ||
+                  r.markdown.toLowerCase().includes(q),
               );
-            })}
-          </select>
 
-          <select
-            value={difficulty}
-            onChange={(e) => setDifficulty(e.target.value as any)}
-            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-          >
-            <option value="all">All levels</option>
-            <option value="basic">Basic</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="advanced">Advanced</option>
-          </select>
-        </div>
-      </div>
+              if (filteredRules.length === 0) return null;
 
-      <div className="space-y-2">
-        {filtered.length === 0 ? (
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
-            No scenarios match your filters yet.
-          </div>
-        ) : (
-          filtered.map((s) => (
-            <button
-              key={s.key}
-              type="button"
-              onClick={() => onLoadScenario(s.key)}
-              className="w-full rounded-2xl border border-slate-200 bg-white p-3 text-left shadow-sm hover:border-slate-300 hover:shadow transition active:scale-[0.995]"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="text-sm font-semibold text-slate-900">
-                      {s.title}
-                    </div>
+              return { ...section, rules: filteredRules };
+            })
+            .filter(Boolean) || [];
 
-                    {s.difficulty ? (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
-                        {s.difficulty}
-                      </span>
-                    ) : null}
+        if (directRules.length === 0 && filteredSections.length === 0) {
+          return null;
+        }
 
-                    {Array.isArray(s.rules) && s.rules.length ? (
-                      <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">
-                        {s.rules.join(", ")}
-                      </span>
-                    ) : null}
-                  </div>
+        return {
+          ...part,
+          rules: directRules,
+          sections: filteredSections,
+        };
+      })
+      .filter(Boolean) as Part[];
+  }, [parts, query]);
 
-                  {s.desc ? (
-                    <div className="mt-1 text-[13px] text-slate-600">{s.desc}</div>
-                  ) : null}
+  // -----------------------------------
+  // Render
+  // -----------------------------------
+  return (
+    <div style={styles.container}>
+      <div style={styles.header}>RRS Library</div>
 
-                  {s.decisionSummary ? (
-                    <div className="mt-2 text-[12px] text-slate-700">
-                      <span className="font-semibold">Decision:</span>{" "}
-                      {s.decisionSummary}
-                    </div>
-                  ) : null}
+      <input
+        style={styles.search}
+        placeholder="Search rules..."
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+      />
 
-                  {Array.isArray(s.rules) && s.rules.length ? (
-                    <div className="mt-2">
-                      <details
-                        className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <summary className="cursor-pointer text-xs font-semibold text-slate-700">
-                          Rule text
-                        </summary>
+      <div style={styles.ruleList}>
+        {filteredParts.map((part) => {
+          const partCollapsed = collapsedParts[part.key];
 
-                        <div className="mt-2 space-y-3">
-                          {s.rules.map((rid) => {
-                            const info = rulesIndex.get(rid);
-                            const title = info?.title ? ` — ${info.title}` : "";
-                            const txt = (info?.ruleText ?? "").trim();
-
-                            return (
-                              <div
-                                key={rid}
-                                className="rounded-lg bg-white p-2 ring-1 ring-slate-200"
-                              >
-                                <div className="text-xs font-semibold text-slate-800">
-                                  {rid}
-                                  {title}
-                                </div>
-                                {txt ? (
-                                  <div className="mt-1 whitespace-pre-wrap text-[12px] text-slate-700">
-                                    {txt}
-                                  </div>
-                                ) : (
-                                  <div className="mt-1 text-[12px] text-slate-500">
-                                    Rule text not included yet. Paste the official wording
-                                    into <span className="font-mono">rrsRules.json</span>.
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </details>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-700">
-                  Load →
-                </div>
+          return (
+            <div key={part.key}>
+              <div
+                style={styles.partHeader}
+                onClick={() =>
+                  setCollapsedParts((prev) => ({
+                    ...prev,
+                    [part.key]: !prev[part.key],
+                  }))
+                }
+              >
+                {partCollapsed ? "▸" : "▾"} {part.title}
               </div>
-            </button>
-          ))
-        )}
+
+              {!partCollapsed && (
+                <>
+                  {/* Direct rules */}
+                  {part.rules?.map((rule) => (
+                    <div
+                      key={rule.id}
+                      style={styles.ruleRow}
+                      onClick={() =>
+                        setActiveRule({
+                          rule,
+                          partTitle: part.title,
+                        })
+                      }
+                    >
+                      <span>
+                        {rule.id} – {rule.title}
+                      </span>
+                      {scenarioCount(rule.id) > 0 && (
+                        <span style={styles.badge}>
+                          {scenarioCount(rule.id)}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Sections */}
+                  {part.sections?.map((section) => {
+                    const sectionKey = `${part.key}-${section.key}`;
+                    const sectionCollapsed = collapsedSections[sectionKey];
+
+                    return (
+                      <div key={section.key} style={styles.sectionBlock}>
+                        <div
+                          style={styles.sectionHeader}
+                          onClick={() =>
+                            setCollapsedSections((prev) => ({
+                              ...prev,
+                              [sectionKey]: !prev[sectionKey],
+                            }))
+                          }
+                        >
+                          {sectionCollapsed ? "▸" : "▾"} {section.title}
+                        </div>
+
+                        {!sectionCollapsed &&
+                          section.rules.map((rule) => (
+                            <div
+                              key={rule.id}
+                              style={styles.ruleRow}
+                              onClick={() =>
+                                setActiveRule({
+                                  rule,
+                                  partTitle: part.title,
+                                  sectionTitle: section.title,
+                                })
+                              }
+                            >
+                              <span>
+                                {rule.id} – {rule.title}
+                              </span>
+                              {scenarioCount(rule.id) > 0 && (
+                                <span style={styles.badge}>
+                                  {scenarioCount(rule.id)}
+                                </span>
+                              )}
+                            </div>
+                          ))}
+                      </div>
+                    );
+                  })}
+                </>
+              )}
+            </div>
+          );
+        })}
       </div>
+
+      {activeRule && (
+        <RuleDetailModal
+          rule={activeRule.rule}
+          partTitle={activeRule.partTitle}
+          sectionTitle={activeRule.sectionTitle}
+          scenarios={scenarios.filter((s) =>
+            s.rules.includes(activeRule.rule.id),
+          )}
+          onClose={() => setActiveRule(null)}
+          onLoadScenario={(key) => {
+            onLoadScenario(key);
+            setActiveRule(null);
+          }}
+        />
+      )}
     </div>
   );
 }
+
+// ============================================================
+// STYLES
+// ============================================================
+
+export const styles: Record<string, React.CSSProperties> = {
+  container: {
+    padding: 12,
+    fontSize: 14,
+    display: "flex",
+    flexDirection: "column",
+    height: "100%",
+  },
+
+  header: {
+    fontWeight: 600,
+    marginBottom: 8,
+  },
+
+  search: {
+    padding: "6px 8px",
+    borderRadius: 6,
+    border: "1px solid #ddd",
+    marginBottom: 10,
+  },
+
+  ruleList: {
+    overflowY: "auto",
+    flex: 1,
+  },
+
+  partHeader: {
+    fontWeight: 600,
+    marginTop: 8,
+    cursor: "pointer",
+  },
+
+  sectionBlock: {
+    paddingLeft: 12,
+  },
+
+  sectionHeader: {
+    fontWeight: 500,
+    marginTop: 6,
+    cursor: "pointer",
+  },
+
+  ruleRow: {
+    padding: "4px 0",
+    paddingLeft: 12,
+    cursor: "pointer",
+    display: "flex",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+
+  badge: {
+    background: "#e5e7eb",
+    borderRadius: 10,
+    padding: "0px 6px",
+    fontSize: 12,
+    flexShrink: 0,
+    height: 18,
+    lineHeight: "18px",
+  },
+
+  backdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.35)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 2000,
+  },
+
+  // Modal as a flex column: sticky header + scroll body
+  modal: {
+    width: 720,
+    maxWidth: "92vw",
+    height: "85vh",
+    background: "#fff",
+    borderRadius: 12,
+    boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+    display: "flex",
+    flexDirection: "column",
+    overflow: "hidden",
+  },
+
+  modalHeaderSticky: {
+    position: "sticky",
+    top: 0,
+    zIndex: 2,
+    background: "#fff",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    padding: 20,
+    borderBottom: "1px solid rgba(0,0,0,0.08)",
+  },
+
+  modalTitle: {
+    fontWeight: 600,
+    fontSize: 18,
+  },
+
+  modalMeta: {
+    fontSize: 12,
+    opacity: 0.6,
+    marginTop: 2,
+  },
+
+  closeBtn: {
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    fontSize: 16,
+    padding: 6,
+    lineHeight: "16px",
+  },
+
+  modalBodyScroll: {
+    padding: 20,
+    overflowY: "auto",
+    WebkitOverflowScrolling: "touch",
+  },
+
+  ruleText: {
+    marginBottom: 18,
+    lineHeight: 1.5,
+  },
+
+  scenarioHeader: {
+    fontWeight: 600,
+    marginBottom: 10,
+  },
+
+  scenarioCard: {
+    border: "1px solid #eee",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 10,
+  },
+
+  scenarioTitle: {
+    fontWeight: 500,
+  },
+
+  scenarioMeta: {
+    fontSize: 12,
+    opacity: 0.6,
+    margin: "4px 0 8px",
+  },
+
+  loadBtn: {
+    padding: "4px 8px",
+    borderRadius: 6,
+    border: "1px solid #ddd",
+    cursor: "pointer",
+    background: "#f9fafb",
+  },
+};

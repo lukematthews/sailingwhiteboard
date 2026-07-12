@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 2,
+  "parts": [
+    {
+      "id": "Part 1",
+      "title": "Fundamental Rules",
+      "rules": [
+        {
+          "id": "RRS 1",
+          "number": "1",
+          "title": "Helping Those in Danger",
+          "markdown": "## Rule 1 – Helping Those in Danger\n\n**1.1** A boat or competitor shall give all possible help to any person or vessel in danger.\n\n**1.2** (a) A boat that retires shall notify the race committee at the first reasonable opportunity.\n\n(b) When a boat requests redress because of injury or physical damage resulting from giving help, she shall comply with rule 62."
+        },
+        {
+          "id": "RRS 2",
+          "number": "2",
+          "title": "Fair Sailing",
+          "markdown": "## Rule 2 – Fair Sailing\n\nA boat and her owner shall compete in compliance with recognized principles of sportsmanship and fair play."
+        }
+      ]
+    },
+    {
+      "id": "Part 2",
+      "title": "When Boats Meet",
+      "rules": [
+        {
+          "id": "RRS 10",
+          "number": "10",
+          "title": "On Opposite Tacks",
+          "markdown": "## Rule 10 – On Opposite Tacks\n\nWhen boats are on opposite tacks, a port-tack boat shall keep clear of a starboard-tack boat."
+        },
+        {
+          "id": "RRS 11",
+          "number": "11",
+          "title": "On the Same Tack, Overlapped",
+          "markdown": "## Rule 11 – On the Same Tack, Overlapped\n\nWhen boats are on the same tack and overlapped, a windward boat shall keep clear of a leeward boat."
+        },
+        {
+          "id": "RRS 12",
+          "number": "12",
+          "title": "On the Same Tack, Not Overlapped",
+          "markdown": "## Rule 12 – On the Same Tack, Not Overlapped\n\nWhen boats are on the same tack and not overlapped, a boat clear astern shall keep clear of a boat clear ahead."
+        },
+        {
+          "id": "RRS 13",
+          "number": "13",
+          "title": "While Tacking",
+          "markdown": "## Rule 13 – While Tacking\n\nAfter a boat passes head to wind, she shall keep clear of other boats until she is on a close-hauled course."
+        },
+        {
+          "id": "RRS 14",
+          "number": "14",
+          "title": "Avoiding Contact",
+          "markdown": "## Rule 14 – Avoiding Contact\n\nA boat shall avoid contact with another boat if reasonably possible.\n\nHowever, a right-of-way boat need not act to avoid contact until it is clear that the other boat is not keeping clear."
+        },
+        {
+          "id": "RRS 15",
+          "number": "15",
+          "title": "Acquiring Right of Way",
+          "markdown": "## Rule 15 – Acquiring Right of Way\n\nWhen a boat acquires right of way, she shall initially give the other boat room to keep clear, unless she acquires right of way because of the other boat's actions."
+        },
+        {
+          "id": "RRS 16",
+          "number": "16",
+          "title": "Changing Course",
+          "markdown": "## Rule 16 – Changing Course\n\n**16.1** When a right-of-way boat changes course, she shall give the other boat room to keep clear.\n\n**16.2** In addition, when after the starting signal a port-tack boat is keeping clear by sailing to pass to leeward of a starboard-tack boat, the starboard-tack boat shall not change course if as a result the port-tack boat would immediately need to change course to continue keeping clear."
+        },
+        {
+          "id": "RRS 17",
+          "number": "17",
+          "title": "On the Same Tack; Proper Course",
+          "markdown": "## Rule 17 – On the Same Tack; Proper Course\n\nIf a boat becomes overlapped within two of her hull lengths to leeward of a boat on the same tack, she shall not sail above her proper course while they remain overlapped within that distance."
+        },
+        {
+          "id": "RRS 18",
+          "number": "18",
+          "title": "Mark-Room",
+          "markdown": "## Rule 18 – Mark-Room\n\nRule 18 applies between boats when they are required to leave a mark on the same side and at least one of them is in the zone.\n\n**18.2(a)** When boats are overlapped the outside boat shall give the inside boat mark-room.\n\n**18.2(b)** If boats are not overlapped when the first of them reaches the zone, the boat clear astern shall thereafter give mark-room.\n\n(See full rule text in official rule book for complete clauses.)"
+        },
+        {
+          "id": "RRS 19",
+          "number": "19",
+          "title": "Room to Pass an Obstruction",
+          "markdown": "## Rule 19 – Room to Pass an Obstruction\n\nRule 19 applies between boats at an obstruction except when it is also a mark the boats are required to leave on the same side."
+        },
+        {
+          "id": "RRS 20",
+          "number": "20",
+          "title": "Room to Tack at an Obstruction",
+          "markdown": "## Rule 20 – Room to Tack at an Obstruction\n\nA boat may hail for room to tack and avoid a boat on the same tack.\n\nShe shall give the hailed boat time to respond."
+        }
+      ]
+    }
+  ]
+}

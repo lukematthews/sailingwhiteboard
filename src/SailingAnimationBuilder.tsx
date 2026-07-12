@@ -297,7 +297,7 @@ export default function SailingAnimationBuilder() {
   // ---------------------------------------------------------------------------
   const [exportText, setExportText] = useState("");
 
-  const { exportProject, importProject, loadProject } = useProjectIO({
+  const { loadProject, exportProject, importProject } = useProjectIO({
     durationMs,
     fps,
     boats,
@@ -306,6 +306,7 @@ export default function SailingAnimationBuilder() {
     marks,
     wind,
     startLine,
+    showStartLine,
     flags,
     flagClipsByFlagId,
 
@@ -317,6 +318,7 @@ export default function SailingAnimationBuilder() {
     setMarks,
     setWind,
     setStartLine,
+    setShowStartLine,
     setFlags,
     setFlagClipsByFlagId,
 
@@ -328,7 +330,7 @@ export default function SailingAnimationBuilder() {
     exportText,
     setExportText,
   });
-
+  
   // ---------------------------------------------------------------------------
   // Welcome Overlay
   // ---------------------------------------------------------------------------
