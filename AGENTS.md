@@ -96,6 +96,10 @@ PR description should include:
 3. How it was validated
 4. Any risk/rollback notes
 
+### 8.3 Branching workflow
+- Treat `develop` as the base branch for all new development work.
+- Open feature/fix branches from `develop` and target `develop` in pull requests unless instructed otherwise.
+
 ## 9) Directory-scoped overrides (optional)
 
 > Add nested `AGENTS.md` files in subdirectories for more specific instructions.
